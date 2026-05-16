@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GRAVITAS — Bend Space, Survive</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    display: flex; justify-content: center; align-items: center;
+    overflow: hidden;
+  }
+  canvas { cursor: crosshair; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = c.width  = Math.min(window.innerWidth,  960);
+const H = c.height = Math.min(window.innerHeight, 620);
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const SHIP_R        = 10;
+const WELL_STRENGTH = 200;
+const WELL_LIFE     = 220;
+const MAX_WELLS     = 3;
+const MAX_SPEED     = 7;
+const WELL_CD_MAX   = 28;
+
+// ── State ──────────────────────────────────────────────────────────────────
+let state = 'menu';   // 'menu' | 'play' | 'dead'
+let score, hi = 0, level, frame;
+let ship, trail, wells, rocks, gems, particles;
+let rockTimer, gemTimer, wellCD;
+let deathFlash = 0;
+let collectFlash = [];  // {x,y,life}
+
+// ── Pre-generated scenery ──────────────────────────────────────────────────
+const stars = Array.from({length: 200}, () => ({
+  x: Math.random() * W,
+  y: Math.random() * H,
+  r: Math.random() * 1.6 + 0.2,
+  a: Math.random() * 0.75 + 0.25,
+  tw: Math.random() * Math.PI * 2,
+  tws: Math.random() * 0.025 + 0.006
+}));
+
+const nebulae = [
+  { x: W*0.18, y: H*0.22, r: 160, h: 210 },
+  { x: W*0.75, y: H*0.65, r: 190, h: 270 },
+  { x: W*0.55, y: H*0.15, r: 130, h: 300 },
+  { x: W*0.82, y: H*0.35, r: 110, h: 170 },
+  { x: W*0.25, y: H*0.78, r: 145, h: 240 },
+];
+
+// ── Init ───────────────────────────────────────────────────────────────────
+function initGame() {
+  ship  = { x: W/2, y: H/2, vx: 1.2, vy: 0.5 };
+  trail = [];
+  wells = [];
+  rocks = [];
+  gems  = [];
+  particles  = [];
+  collectFlash = [];
+  score  = 0;
+  level  = 1;
+  frame  = 0;
+  rockTimer = 0;
+  gemTimer  = 0;
+  wellCD    = 0;
+  deathFlash = 0;
+  for (let i = 0; i < 3; i++) spawnRock();
+  for (let i = 0; i < 2; i++) spawnGem();
+}
+
+// ── Rock generation ────────────────────────────────────────────────────────
+function rockShape(n) {
+  return Array.from({length: n}, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    const r = 0.62 + Math.random() * 0.38;
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  });
+}
+
+function spawnRock() {
+  const side  = Math.floor(Math.random() * 4);
+  const speed = 0.55 + level * 0.22 + Math.random() * 0.45;
+  let x, y, vx, vy;
+  const jitter = () => (Math.random() - 0.5) * 2;
+  if      (side === 0) { x = Math.random()*W; y = -44;   vx = jitter();  vy =  speed; }
+  else if (side === 1) { x = W + 44;          y = Math.random()*H; vx = -speed; vy = jitter(); }
+  else if (side === 2) { x = Math.random()*W; y = H+44;  vx = jitter();  vy = -speed; }
+  else                 { x = -44;             y = Math.random()*H; vx =  speed; vy = jitter(); }
+  rocks.push({
+    x, y, vx, vy,
+    r:    18 + Math.random() * 24,
+    rot:  Math.random() * Math.PI * 2,
+    rotV: (Math.random() - 0.5) * 0.045,
+    hue:  195 + Math.random() * 55,
+    pts:  rockShape(9)
+  });
+}
+
+function spawnGem() {
+  gems.push({
+    x:     70 + Math.random() * (W - 140),
+    y:     70 + Math.random() * (H - 140),
+    r:     10,
+    phase: Math.random() * Math.PI * 2,
+    alive: true,
+    rot:   0
+  });
+}
+
+// ── Particles ──────────────────────────────────────────────────────────────
+function burst(x, y, color, n = 14) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 1 + Math.random() * 4.5;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      r:  2.5 + Math.random() * 4,
+      life: 1,
+      decay: 0.028 + Math.random() * 0.04,
+      color
+    });
+  }
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────
+c.addEventListener('click', e => {
+  const rect = c.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (state === 'menu') { state = 'play'; initGame(); return; }
+  if (state === 'dead')  { state = 'play'; initGame(); return; }
+
+  if (wellCD > 0 || wells.length >= MAX_WELLS) return;
+  wells.push({ x: mx, y: my, life: WELL_LIFE, max: WELL_LIFE });
+  wellCD = WELL_CD_MAX;
+});
+
+// ── Physics ────────────────────────────────────────────────────────────────
+function gravity(well, obj, k) {
+  const dx = well.x - obj.x;
+  const dy = well.y - obj.y;
+  const d2 = dx*dx + dy*dy;
+  const d  = Math.sqrt(d2);
+  if (d < 6) return;
+  const f = k / (d2 + 900);
+  obj.vx += (dx / d) * f;
+  obj.vy += (dy / d) * f;
+}
+
+// ── Update ─────────────────────────────────────────────────────────────────
+function update() {
+  frame++;
+  if (state !== 'play') return;
+
+  score += 0.1;
+  level  = 1 + Math.floor(score / 160);
+  if (wellCD > 0) wellCD--;
+  if (deathFlash > 0) deathFlash -= 0.06;
+
+  // Spawn timing
+  const interval = Math.max(42, 165 - level * 13);
+  if (++rockTimer >= interval) { spawnRock(); rockTimer = 0; }
+  if (++gemTimer  >= 320 && gems.length < 4) { spawnGem(); gemTimer = 0; }
+
+  // Wells → ship & rocks
+  for (const w of wells) {
+    w.life--;
+    gravity(w, ship, WELL_STRENGTH);
+    for (const r of rocks) gravity(w, r, WELL_STRENGTH * 0.08);
+  }
+  wells = wells.filter(w => w.life > 0);
+
+  // Ship
+  const spd = Math.hypot(ship.vx, ship.vy);
+  if (spd > MAX_SPEED) { ship.vx = ship.vx/spd * MAX_SPEED; ship.vy = ship.vy/spd * MAX_SPEED; }
+  ship.x += ship.vx;
+  ship.y += ship.vy;
+  if (ship.x < 0)  ship.x += W;
+  if (ship.x > W)  ship.x -= W;
+  if (ship.y < 0)  ship.y += H;
+  if (ship.y > H)  ship.y -= H;
+
+  // Trail
+  trail.push({ x: ship.x, y: ship.y });
+  if (trail.length > 30) trail.shift();
+
+  // Rocks
+  for (const r of rocks) {
+    r.x += r.vx; r.y += r.vy; r.rot += r.rotV;
+    if (Math.hypot(r.x - ship.x, r.y - ship.y) < r.r + SHIP_R - 4) {
+      burst(ship.x, ship.y, '#f55', 26);
+      deathFlash = 1;
+      state = 'dead';
+      if (Math.floor(score) > hi) hi = Math.floor(score);
+      return;
+    }
+  }
+  rocks = rocks.filter(r => r.x > -100 && r.x < W+100 && r.y > -100 && r.y < H+100);
+
+  // Gems
+  for (const g of gems) {
+    g.phase += 0.055;
+    g.rot   += 0.018;
+    if (Math.hypot(g.x - ship.x, g.y - ship.y) < g.r + SHIP_R + 6) {
+      g.alive = false;
+      score  += 60;
+      burst(g.x, g.y, '#0ef', 18);
+      collectFlash.push({ x: g.x, y: g.y, life: 1 });
+    }
+  }
+  gems = gems.filter(g => g.alive);
+
+  // Particles
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.94; p.vy *= 0.94;
+    p.life -= p.decay;
+    p.r    *= 0.97;
+  }
+  particles = particles.filter(p => p.life > 0 && p.r > 0.2);
+
+  // Collect flashes
+  collectFlash = collectFlash
+    .map(f => ({ ...f, life: f.life - 0.06 }))
+    .filter(f => f.life > 0);
+}
+
+// ── Draw helpers ───────────────────────────────────────────────────────────
+function glow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
+function noGlow()           { ctx.shadowBlur = 0; }
+
+// ── Scenery ────────────────────────────────────────────────────────────────
+function drawBG() {
+  ctx.fillStyle = '#000912';
+  ctx.fillRect(0, 0, W, H);
+
+  // Nebulae
+  for (const n of nebulae) {
+    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    g.addColorStop(0, `hsla(${n.h},65%,28%,0.13)`);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Stars
+  for (const s of stars) {
+    s.tw += s.tws;
+    const alpha = s.a * (0.65 + 0.35 * Math.sin(s.tw));
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Ship ───────────────────────────────────────────────────────────────────
+function drawShip() {
+  // Trail
+  for (let i = 0; i < trail.length; i++) {
+    const t = (i + 1) / trail.length;
+    // Don't draw segment if it wrapped across the screen
+    if (i > 0) {
+      const prev = trail[i-1];
+      if (Math.hypot(trail[i].x - prev.x, trail[i].y - prev.y) > W/2) continue;
+    }
+    ctx.fillStyle = `rgba(50,215,255,${t * 0.22})`;
+    ctx.beginPath();
+    ctx.arc(trail[i].x, trail[i].y, SHIP_R * t * 0.9, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  const angle = Math.atan2(ship.vy, ship.vx);
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(angle);
+
+  // Engine flame
+  const flk = 0.72 + Math.random() * 0.28;
+  glow('#fa6', 20);
+  ctx.beginPath();
+  ctx.moveTo(-SHIP_R * 0.55, 0);
+  ctx.lineTo(-SHIP_R * 1.9 * flk, -SHIP_R * 0.42 * flk);
+  ctx.lineTo(-SHIP_R * 1.9 * flk,  SHIP_R * 0.42 * flk);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(255,150,30,0.88)`;
+  ctx.fill();
+
+  // Hull
+  glow('#3ce', 18);
+  ctx.strokeStyle = '#3ce';
+  ctx.lineWidth   = 2;
+  ctx.fillStyle   = 'rgba(30,170,210,0.14)';
+  ctx.beginPath();
+  ctx.moveTo( SHIP_R * 1.15,  0);
+  ctx.lineTo(-SHIP_R * 0.72, -SHIP_R * 0.68);
+  ctx.lineTo(-SHIP_R * 0.42,  0);
+  ctx.lineTo(-SHIP_R * 0.72,  SHIP_R * 0.68);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Cockpit
+  glow('#fff', 8);
+  ctx.fillStyle = '#dff';
+  ctx.beginPath(); ctx.arc(SHIP_R * 0.32, 0, 2.2, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+  noGlow();
+}
+
+// ── Rocks ──────────────────────────────────────────────────────────────────
+function drawRocks() {
+  for (const r of rocks) {
+    ctx.save();
+    ctx.translate(r.x, r.y);
+    ctx.rotate(r.rot);
+    glow(`hsl(${r.hue},55%,55%)`, 10);
+    ctx.strokeStyle = `hsl(${r.hue},50%,62%)`;
+    ctx.fillStyle   = `hsla(${r.hue},30%,16%,0.92)`;
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    r.pts.forEach(([px, py], i) => {
+      if (i === 0) ctx.moveTo(px*r.r, py*r.r);
+      else         ctx.lineTo(px*r.r, py*r.r);
+    });
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  noGlow();
+}
+
+// ── Gravity wells ──────────────────────────────────────────────────────────
+function drawWells() {
+  for (const w of wells) {
+    const t = w.life / w.max;
+
+    // Warping rings
+    for (let i = 0; i < 4; i++) {
+      const phase = ((frame * 0.038 + i * 0.25) % 1);
+      const r     = 55 * phase;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(175,65,255,${t * (1 - phase) * 0.75})`;
+      ctx.lineWidth   = 1.8;
+      ctx.stroke();
+    }
+
+    // Swirling tick marks
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.rotate(frame * 0.04 * t);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const ir = 12, or = 18;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*ir, Math.sin(a)*ir);
+      ctx.lineTo(Math.cos(a)*or, Math.sin(a)*or);
+      ctx.strokeStyle = `rgba(210,120,255,${t * 0.8})`;
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Core glow
+    const g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, 22);
+    g.addColorStop(0, `rgba(230,110,255,${t * 0.75})`);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(w.x, w.y, 22, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Gems ───────────────────────────────────────────────────────────────────
+function drawGems() {
+  for (const g of gems) {
+    const pulse = Math.sin(g.phase) * 0.32 + 0.68;
+    const r     = g.r * pulse;
+
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(g.rot);
+    glow('#0df', 20 * pulse);
+    ctx.strokeStyle = `rgba(0,230,255,${pulse})`;
+    ctx.fillStyle   = 'rgba(0,190,255,0.18)';
+    ctx.lineWidth   = 2;
+
+    // Hexagonal crystal
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI/6;
+      const x = Math.cos(a) * r * 1.1;
+      const y = Math.sin(a) * r * 1.1;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Inner cross
+    ctx.strokeStyle = `rgba(160,240,255,${pulse * 0.6})`;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, -r*0.7); ctx.lineTo(0,  r*0.7);
+    ctx.moveTo(-r*0.7, 0); ctx.lineTo( r*0.7, 0);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Collect flashes
+  for (const f of collectFlash) {
+    const r = 40 * (1 - f.life);
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, r, 0, Math.PI*2);
+    ctx.strokeStyle = `rgba(0,255,220,${f.life * 0.7})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  noGlow();
+}
+
+// ── Particles ──────────────────────────────────────────────────────────────
+function drawParticles() {
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    glow(p.color, p.r * 2.5);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(0.1, p.r), 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  noGlow();
+}
+
+// ── HUD ────────────────────────────────────────────────────────────────────
+function drawHUD() {
+  noGlow();
+  ctx.font = '18px "Courier New", monospace';
+
+  // Left: score + level
+  ctx.textAlign   = 'left';
+  ctx.fillStyle   = 'rgba(70,210,255,0.92)';
+  ctx.fillText(`SCORE  ${Math.floor(score).toString().padStart(6,'0')}`, 18, 34);
+  ctx.fillStyle   = 'rgba(130,190,255,0.65)';
+  ctx.font        = '14px "Courier New"';
+  ctx.fillText(`LEVEL  ${level}`, 18, 54);
+
+  // Right: well charge pips
+  ctx.textAlign   = 'right';
+  const avail     = MAX_WELLS - wells.length;
+  const pip_on    = '◈';
+  const pip_off   = '◇';
+  const pips      = pip_on.repeat(avail) + pip_off.repeat(MAX_WELLS - avail);
+  ctx.font        = '20px "Courier New"';
+  ctx.fillStyle   = wellCD > 0 ? 'rgba(130,50,220,0.55)' : 'rgba(175,80,255,0.95)';
+  ctx.fillText(pips, W - 18, 34);
+  ctx.font        = '11px "Courier New"';
+  ctx.fillStyle   = wellCD > 0 ? 'rgba(160,80,255,0.5)' : 'rgba(130,80,200,0.45)';
+  ctx.fillText(wellCD > 0 ? 'RECHARGING' : 'CLICK — WELL', W - 18, 52);
+
+  // Top-center: hi score if exists
+  if (hi > 0) {
+    ctx.textAlign = 'center';
+    ctx.font      = '12px "Courier New"';
+    ctx.fillStyle = 'rgba(255,200,80,0.45)';
+    ctx.fillText(`BEST  ${hi}`, W/2, 22);
+  }
+}
+
+// ── Screens ────────────────────────────────────────────────────────────────
+function drawMenu() {
+  ctx.textAlign = 'center';
+
+  // Title
+  glow('#3ce', 50);
+  ctx.fillStyle = '#4df';
+  ctx.font      = 'bold 76px "Courier New", monospace';
+  ctx.fillText('GRAVITAS', W/2, H/2 - 68);
+
+  noGlow();
+  ctx.fillStyle = 'rgba(150,220,255,0.6)';
+  ctx.font      = '15px "Courier New"';
+  ctx.fillText('B E N D   S P A C E  ·  S U R V I V E', W/2, H/2 - 22);
+
+  ctx.fillStyle = 'rgba(190,160,255,0.65)';
+  ctx.font      = '13px "Courier New"';
+  ctx.fillText('Your ship drifts freely through space — you cannot steer directly.', W/2, H/2 + 20);
+  ctx.fillText('Click to drop a GRAVITY WELL that bends your path around asteroids.', W/2, H/2 + 42);
+  ctx.fillText('Collect drift crystals for bonus points. Up to 3 wells at a time.', W/2, H/2 + 64);
+
+  const pulse = 0.6 + 0.4 * Math.sin(frame * 0.065);
+  glow('#5fa', pulse * 12);
+  ctx.fillStyle = `rgba(80,255,170,${pulse})`;
+  ctx.font      = 'bold 19px "Courier New"';
+  ctx.fillText('[ CLICK TO BEGIN ]', W/2, H/2 + 118);
+  noGlow();
+
+  if (hi > 0) {
+    ctx.fillStyle = 'rgba(255,205,80,0.65)';
+    ctx.font      = '13px "Courier New"';
+    ctx.fillText(`HIGH SCORE  ${hi}`, W/2, H/2 + 158);
+  }
+}
+
+function drawDead() {
+  // Flash overlay
+  if (deathFlash > 0) {
+    ctx.fillStyle = `rgba(220,40,40,${deathFlash * 0.35})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  ctx.fillStyle = 'rgba(0,4,18,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  glow('#f44', 40);
+  ctx.fillStyle = '#f55';
+  ctx.font      = 'bold 56px "Courier New"';
+  ctx.fillText('ANNIHILATED', W/2, H/2 - 38);
+
+  noGlow();
+  ctx.fillStyle = 'rgba(255,210,70,0.92)';
+  ctx.font      = '24px "Courier New"';
+  ctx.fillText(`SCORE  ${Math.floor(score)}`, W/2, H/2 + 14);
+
+  if (Math.floor(score) >= hi && hi > 0) {
+    glow('#5fa', 16);
+    ctx.fillStyle = 'rgba(80,255,180,0.95)';
+    ctx.font      = '16px "Courier New"';
+    ctx.fillText('✦  NEW HIGH SCORE  ✦', W/2, H/2 + 48);
+    noGlow();
+  } else if (hi > 0) {
+    ctx.fillStyle = 'rgba(180,180,255,0.5)';
+    ctx.font      = '13px "Courier New"';
+    ctx.fillText(`BEST  ${hi}`, W/2, H/2 + 48);
+  }
+
+  const pulse = 0.55 + 0.45 * Math.sin(frame * 0.07);
+  ctx.fillStyle = `rgba(170,80,255,${pulse})`;
+  ctx.font      = '17px "Courier New"';
+  ctx.fillText('[ CLICK TO RETRY ]', W/2, H/2 + 108);
+}
+
+// ── Main loop ──────────────────────────────────────────────────────────────
+function loop() {
+  update();
+  drawBG();
+
+  if (state === 'menu') {
+    drawMenu();
+  } else {
+    drawWells();
+    drawGems();
+    drawRocks();
+    drawParticles();
+    drawShip();
+    drawHUD();
+    if (state === 'dead') drawDead();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

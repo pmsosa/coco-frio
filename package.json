@@ -1,0 +1,13 @@
+{
+  "name": "games",
+  "version": "1.0.0",
+  "description": "A collection of small browser games",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "type": "commonjs",
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}
