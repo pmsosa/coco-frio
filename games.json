@@ -1,0 +1,16 @@
+[
+  {
+    "id": "arenita",
+    "name": "Arenita",
+    "badge": "PUZZLE · PHYSICS · 1–2 PLAYERS",
+    "desc": "Tetris, but the pieces disintegrate into sand. Get same-colored grains to bridge both walls — then watch them explode. Built at 35,000 feet over the Atlantic, no wifi, pure delusion.",
+    "tags": ["Vanilla JS", "Sand Physics", "Cellular Automata", "Couch Co-op", "Web Audio"]
+  },
+  {
+    "id": "gravitas",
+    "name": "Gravitas",
+    "badge": "ARCADE · SURVIVAL",
+    "desc": "Your ship drifts freely through space — you cannot steer directly. Click to drop gravity wells that bend your path around asteroids. Collect drift crystals for bonus points. Built in Croatia overlooking the sunset of Rovinj.",
+    "tags": ["Vanilla JS", "Gravity", "Arcade", "Survival"]
+  }
+]
