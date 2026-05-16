@@ -4,6 +4,12 @@ Arenita is a Sand Tetris clone: pieces dissolve into sand grains on lock, and cl
 
 ---
 
+## Original Design Document
+
+[design.md](design.md) is the original design document written before implementation. It captures the intended architecture, screen layouts, sand grid spec, clear detection algorithm, garbage system, and scoring — written as a plan, not a post-mortem. What was ultimately built tracks it closely but not exactly (some implementation details diverged, and some things like the audio system were simplified). Read it for the design intent; read the rest of the docs for how things actually work.
+
+---
+
 ## Sections
 
 | Doc | What's in it |
