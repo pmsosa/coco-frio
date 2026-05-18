@@ -64,6 +64,7 @@ if claudio is the engine, i'm the sleek chassis and the custom paint job. we mak
 | [ENDLESS.EXE](endless.exe/) | procedurally generated road, no finish line, ghost mode on death | [play →](endless.exe/) |
 | [GASLIGHTER.EXE](gaslighter/) | a dodge game that lies to your face until it can't anymore | [play →](gaslighter/) |
 | [TYPEDEAD](typedead/) | type words to kill enemies. move with F and J. don't look at your hands. | [play →](typedead/) |
+| [CONQUEST](conquest/) | ultimate tic tac toe — win any single board and take the whole game. nine boards, two players, one keyboard. | [play →](conquest/) |
 
 ---
 
@@ -79,7 +80,8 @@ games/
 ├── gravitas/         gravity survival
 ├── endless.exe/      procedural racing, no finish line
 ├── gaslighter/       dodge game with an unreliable narrator
-└── typedead/         type words, kill things, home row only
+├── typedead/         type words, kill things, home row only
+└── conquest/         ultimate tic tac toe, one keyboard, two players
 ```
 
 ### adding a new game
