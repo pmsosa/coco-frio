@@ -26,6 +26,8 @@ every game in this collection is:
 [ ] README.md written (see readme spec below)
 [ ] docs/ folder with at least overview.md
 [ ] entry added to games.json
+[ ] row added to the games table in the root README.md
+[ ] line added to the directory tree in the root README.md
 [ ] if multi-file: builds cleanly via node build.js <name>
 ```
 
@@ -93,6 +95,26 @@ add an entry to `games.json` in the root. order is display order in the game cen
 ```
 
 `id` must match the folder name exactly. the game center derives the banner path (`<id>/<id>.png`) and play link (`<id>/`) from this.
+
+---
+
+## the root README 📰
+
+`index.html` reads `games.json` at runtime — once your entry is in there, the game center picks it up automatically. but the root `README.md` is hand-maintained. two places to update:
+
+**1. the games table** — add a row in the same format as the others:
+
+```markdown
+| [GAME NAME](your-game-name/) | one punchy line. lowercase. what makes it interesting. | [play →](your-game-name/) |
+```
+
+**2. the directory tree** — add a line at the bottom of the tree block:
+
+```markdown
+└── your-game-name/   what it is in four words
+```
+
+that's it. `games.json` → game center. README table → github. don't let them get out of sync.
 
 ---
 
