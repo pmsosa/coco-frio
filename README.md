@@ -2,7 +2,7 @@
 
 ### a videogame collection
 
-![gravitas banner](gravitas/gravitas.png)
+![coco frio banner](games.png)
 
 ![built with vibes](https://badgen.net/badge/built/with%20vibes/purple)
 ![license](https://badgen.net/badge/license/BSD-3/green)
