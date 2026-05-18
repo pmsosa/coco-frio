@@ -2,7 +2,7 @@
 
 ### a videogame collection
 
-![gravitas banner](gravitas/games.png)
+![gravitas banner](gravitas/gravitas.png)
 
 ![built with vibes](https://badgen.net/badge/built/with%20vibes/purple)
 ![license](https://badgen.net/badge/license/BSD-3/green)
@@ -61,8 +61,9 @@ if claudio is the engine, i'm the sleek chassis and the custom paint job. we mak
 |------|------|------|
 | [Arenita](arenita/) | tetris but the pieces become sand and you bridge the walls | [play →](arenita/) |
 | [Gravitas](gravitas/) | your ship can't steer. only bend space. survive. | [play →](gravitas/) |
-
-more coming. ideas are cheap. time is not. but we're working on it.
+| [ENDLESS.EXE](endless.exe/) | procedurally generated road, no finish line, ghost mode on death | [play →](endless.exe/) |
+| [GASLIGHTER.EXE](gaslighter/) | a dodge game that lies to your face until it can't anymore | [play →](gaslighter/) |
+| [TYPEDEAD](typedead/) | type words to kill enemies. move with F and J. don't look at your hands. | [play →](typedead/) |
 
 ---
 
@@ -76,7 +77,9 @@ games/
 ├── start.sh          spins up a local server. run this. play games.
 ├── arenita/          sand tetris
 ├── gravitas/         gravity survival
-└── <next game>/      tbd. stay tuned.
+├── endless.exe/      procedural racing, no finish line
+├── gaslighter/       dodge game with an unreliable narrator
+└── typedead/         type words, kill things, home row only
 ```
 
 ### adding a new game

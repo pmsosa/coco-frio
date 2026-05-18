@@ -12,5 +12,26 @@
     "badge": "ARCADE · SURVIVAL",
     "desc": "Your ship drifts freely through space — you cannot steer directly. Click to drop gravity wells that bend your path around asteroids. Collect drift crystals for bonus points. Built in Croatia overlooking the sunset of Rovinj.",
     "tags": ["Vanilla JS", "Gravity", "Arcade", "Survival"]
+  },
+  {
+    "id": "endless.exe",
+    "name": "ENDLESS.EXE",
+    "badge": "RACING · ARCADE · 1 PLAYER",
+    "desc": "A procedurally generated racing game with no finish line. Dodge obstacles, collect power-ups, and watch the track twist faster than you can react. How long can you last?",
+    "tags": ["Vanilla JS", "Canvas", "Procedural Generation", "Racing", "Arcade"]
+  },
+  {
+    "id": "gaslighter",
+    "name": "GASLIGHTER.EXE",
+    "badge": "SURVIVAL · PSYCHOLOGICAL · 1 PLAYER",
+    "desc": "Dodge the FRIENDS. They are definitely FRIENDS. Your score is increasing (this is good). Your health is 100% (do not verify). Survive long enough and the game will confess everything. Built at 2am in a Chicago hotel room staring at the ceiling.",
+    "tags": ["Vanilla JS", "Canvas", "Unreliable Narrator", "Survival", "Psychological"]
+  },
+  {
+    "id": "typedead",
+    "name": "TYPEDEAD",
+    "badge": "ARCADE · TYPING · 1 PLAYER",
+    "desc": "Enemies march in from the right — type their words to kill them. Move with F and J (home row, always) while your fingers are busy with the word. Don't stop typing. Don't look at your hands.",
+    "tags": ["Vanilla JS", "Canvas", "Typing", "Arcade", "Survival"]
   }
 ]

@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -20,17 +21,22 @@
       --orange: #ffaa44;
       --mono:   'JetBrains Mono', monospace;
     }
-    html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.65; }
+
+    html, body {
+      height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif; line-height: 1.65;
+    }
 
     /* ── NAV ── */
     nav {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border);
+      height: 52px; flex-shrink: 0;
     }
     .nav-back {
       font-family: var(--mono); font-size: 0.72rem; color: var(--dim);
       text-decoration: none; letter-spacing: 0.04em; transition: color 0.2s;
-      display: flex; align-items: center; gap: 0.5rem;
     }
     .nav-back:hover { color: var(--cyan); }
     .nav-label {
@@ -38,227 +44,480 @@
       letter-spacing: 0.1em;
     }
 
-    /* ── LAYOUT ── */
-    main { max-width: 900px; margin: 0 auto; padding: 3rem 2rem 6rem; }
-    .page-eyebrow { font-family: var(--mono); font-size: 0.65rem; color: var(--orange); letter-spacing: 0.1em; margin-bottom: 0.6rem; }
-    .page-title { font-size: clamp(1.6rem, 4vw, 2.6rem); font-weight: 300; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-    .page-title em { color: var(--orange); font-style: normal; }
-    .page-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); margin-bottom: 3rem; letter-spacing: 0.04em; }
+    /* ── SHELL ── */
+    .shell {
+      display: flex; flex-direction: column;
+      height: 100vh;
+    }
+    .workspace {
+      display: flex; flex: 1; min-height: 0;
+    }
 
-    /* ── SLIDER ── */
-    .slider-wrap { position: relative; }
-    .slider-viewport { overflow: hidden; border-radius: 4px; border: 1px solid var(--border); }
-    .slider-track { display: flex; transition: transform 0.38s cubic-bezier(0.4, 0, 0.2, 1); will-change: transform; }
-    .slide { flex: 0 0 100%; min-width: 0; }
+    /* ── LIST PANEL ── */
+    .list-panel {
+      width: 300px; flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+    }
+    .list-header {
+      padding: 1rem 1.4rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .list-eyebrow {
+      font-family: var(--mono); font-size: 0.58rem;
+      color: var(--orange); letter-spacing: 0.12em; margin-bottom: 0.25rem;
+    }
+    .list-title {
+      font-size: 1.1rem; font-weight: 300; letter-spacing: -0.01em;
+    }
+    .list-title em { color: var(--orange); font-style: normal; }
+    .list-sub {
+      font-family: var(--mono); font-size: 0.6rem; color: var(--dim);
+      margin-top: 0.25rem; letter-spacing: 0.04em;
+    }
 
-    .slide-banner {
-      width: 100%; aspect-ratio: 4 / 1;
-      object-fit: cover; object-position: center;
-      display: block;
+    .list-filter-wrap {
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .list-filter {
+      font-family: var(--mono); font-size: 0.68rem; color: var(--text);
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 2px; padding: 0.35rem 0.7rem;
+      width: 100%; outline: none; letter-spacing: 0.04em;
+      transition: border-color 0.2s;
+    }
+    .list-filter:focus { border-color: rgba(255,170,68,0.4); }
+    .list-filter::placeholder { color: var(--dim); }
+
+    .game-list {
+      flex: 1; overflow-y: auto; padding: 0.5rem 0;
+    }
+    .game-list::-webkit-scrollbar { width: 3px; }
+    .game-list::-webkit-scrollbar-track { background: transparent; }
+    .game-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .list-item {
+      display: flex; align-items: baseline; gap: 0.7rem;
+      padding: 0.55rem 1.4rem; cursor: pointer;
+      transition: background 0.15s;
+      border-left: 2px solid transparent;
+    }
+    .list-item:hover { background: rgba(255,170,68,0.04); }
+    .list-item.active {
+      background: rgba(255,170,68,0.07);
+      border-left-color: var(--orange);
+    }
+    .list-idx {
+      font-family: var(--mono); font-size: 0.58rem;
+      color: var(--dim); min-width: 1.4rem; flex-shrink: 0;
+    }
+    .list-item.active .list-idx { color: var(--orange); }
+    .list-name {
+      font-family: var(--mono); font-size: 0.75rem;
+      color: var(--text); letter-spacing: 0.02em;
+    }
+    .list-item.active .list-name { color: var(--orange); }
+
+    .list-hint {
+      padding: 0.8rem 1.4rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .hint-line {
+      font-family: var(--mono); font-size: 0.56rem;
+      color: var(--dim); letter-spacing: 0.06em;
+    }
+    .hint-key {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 2px; padding: 0 0.3rem;
+      margin-right: 0.2rem; line-height: 1.6;
+    }
+
+    /* ── DETAIL PANEL ── */
+    .detail-panel {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* banner */
+    .detail-banner-wrap {
+      position: relative; flex-shrink: 0;
       border-bottom: 1px solid var(--border);
     }
-    .slide-banner-placeholder {
-      width: 100%; aspect-ratio: 4 / 1;
+    .detail-banner {
+      width: 100%; aspect-ratio: 16 / 4;
+      object-fit: cover; object-position: center;
+      display: block;
+    }
+    .detail-banner-placeholder {
+      width: 100%; aspect-ratio: 16 / 4;
       background: var(--bg2);
-      border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: center;
       font-family: var(--mono); font-size: 0.65rem; color: var(--dim);
       letter-spacing: 0.1em;
     }
-    .slide-body { padding: 1.6rem 2rem 2rem; background: var(--bg2); }
-    .slide-badge {
-      font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em;
-      color: var(--orange); display: block; margin-bottom: 0.5rem;
+    /* scanlines */
+    .detail-banner-wrap::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 2px,
+        rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px
+      );
+      pointer-events: none;
     }
-    .slide-name { font-size: 1.4rem; font-weight: 400; margin-bottom: 0.4rem; letter-spacing: -0.01em; }
-    .slide-desc { font-size: 0.83rem; color: var(--text); line-height: 1.6; max-width: 56ch; margin-bottom: 1.4rem; }
-    .slide-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.6rem; }
-    .slide-tag {
+
+    /* info */
+    .detail-body {
+      flex: 1; padding: 2rem 2.4rem;
+      display: flex; flex-direction: column; gap: 1rem;
+      overflow-y: auto;
+    }
+    .detail-body::-webkit-scrollbar { width: 3px; }
+    .detail-body::-webkit-scrollbar-track { background: transparent; }
+    .detail-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .detail-badge {
+      font-family: var(--mono); font-size: 0.6rem;
+      color: var(--orange); letter-spacing: 0.12em;
+    }
+    .detail-name {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 300; letter-spacing: -0.02em;
+    }
+    .detail-desc {
+      font-size: 0.88rem; color: var(--text);
+      line-height: 1.7; max-width: 60ch;
+    }
+    .detail-tags {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+    }
+    .detail-tag {
       font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em;
       color: var(--dim); border: 1px solid rgba(58,96,64,0.4);
       padding: 0.18rem 0.55rem; border-radius: 2px;
     }
-    .slide-actions { display: flex; align-items: center; gap: 1rem; }
+    .detail-actions { display: flex; gap: 1rem; align-items: center; }
     .btn-play {
       font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em;
       color: var(--bg); background: var(--orange);
       border: none; border-radius: 2px;
-      padding: 0.55rem 1.3rem; cursor: pointer;
+      padding: 0.6rem 1.5rem; cursor: pointer;
       text-decoration: none; display: inline-block;
       transition: opacity 0.15s;
     }
     .btn-play:hover { opacity: 0.85; }
+    .btn-readme {
+      font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
+      color: var(--dim); background: transparent;
+      border: 1px solid var(--border); border-radius: 2px;
+      padding: 0.6rem 1rem; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-readme:hover { color: var(--cyan); border-color: rgba(0,212,170,0.3); }
 
-    /* ── SLIDER CONTROLS ── */
-    .slider-controls {
+    /* empty state */
+    .detail-empty {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 0.68rem;
+      color: var(--dim); letter-spacing: 0.08em;
+    }
+
+    /* ── README MODAL ── */
+    .readme-backdrop {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(5,12,7,0.88);
+      display: flex; align-items: center; justify-content: center;
+      padding: 2rem;
+      animation: fade-in 0.15s ease;
+    }
+    .readme-backdrop.closing { animation: fade-out 0.15s ease forwards; }
+    @keyframes fade-in  { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+    .readme-box {
+      width: 100%; max-width: 700px; max-height: 80vh;
+      border: 1px solid var(--border);
+      border-radius: 4px; background: var(--bg2);
+      display: flex; flex-direction: column;
+      animation: slide-up 0.15s ease;
+    }
+    @keyframes slide-up { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    .readme-header {
       display: flex; align-items: center; justify-content: space-between;
-      margin-top: 1.2rem;
+      padding: 0.75rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .slider-dots { display: flex; gap: 0.5rem; }
-    .dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      border: 1px solid var(--dim); background: transparent;
-      cursor: pointer; transition: background 0.2s, border-color 0.2s;
-      padding: 0;
+    .readme-title {
+      font-family: var(--mono); font-size: 0.65rem;
+      color: var(--orange); letter-spacing: 0.1em;
     }
-    .dot.active { background: var(--orange); border-color: var(--orange); }
-    .slider-arrows { display: flex; gap: 0.5rem; }
-    .arrow {
-      font-family: var(--mono); font-size: 0.72rem; color: var(--dim);
-      background: transparent; border: 1px solid var(--border);
-      border-radius: 2px; padding: 0.3rem 0.7rem; cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
-      line-height: 1;
+    .readme-close {
+      font-family: var(--mono); font-size: 0.65rem; color: var(--dim);
+      background: none; border: 1px solid var(--border); border-radius: 2px;
+      padding: 0.15rem 0.5rem; cursor: pointer; letter-spacing: 0.06em;
+      transition: color 0.15s, border-color 0.15s;
     }
-    .arrow:hover:not(:disabled) { color: var(--orange); border-color: rgba(255,170,68,0.4); }
-    .arrow:disabled { opacity: 0.25; cursor: default; }
+    .readme-close:hover { color: var(--text); border-color: var(--dim); }
 
-    .slider-controls.single { display: none; }
+    .readme-body {
+      flex: 1; overflow-y: auto; padding: 1.4rem 1.6rem;
+    }
+    .readme-body::-webkit-scrollbar { width: 3px; }
+    .readme-body::-webkit-scrollbar-track { background: transparent; }
+    .readme-body::-webkit-scrollbar-thumb { background: var(--border); }
 
-    /* ── FILTER ── */
-    .game-filter { font-family:var(--mono); font-size:0.72rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:2px; padding:0.5rem 0.9rem; width:100%; margin-bottom:1.5rem; letter-spacing:0.04em; outline:none; transition:border-color 0.2s; }
-    .game-filter:focus { border-color:rgba(255,170,68,0.4); }
-    .game-filter::placeholder { color:var(--dim); }
-    .no-results { font-family:var(--mono); font-size:0.72rem; color:var(--dim); text-align:center; padding:2rem 0; }
+    .readme-content { font-size: 0.85rem; line-height: 1.75; color: var(--text); }
+    .readme-content h1, .readme-content h2, .readme-content h3 {
+      font-family: var(--mono); font-weight: 400; letter-spacing: -0.01em;
+      color: var(--orange); margin: 1.4rem 0 0.5rem;
+    }
+    .readme-content h1 { font-size: 1rem; }
+    .readme-content h2 { font-size: 0.88rem; }
+    .readme-content h3 { font-size: 0.78rem; color: var(--cyan); }
+    .readme-content h1:first-child, .readme-content h2:first-child { margin-top: 0; }
+    .readme-content p { margin-bottom: 0.85rem; }
+    .readme-content ul, .readme-content ol {
+      padding-left: 1.4rem; margin-bottom: 0.85rem;
+    }
+    .readme-content li { margin-bottom: 0.25rem; }
+    .readme-content code {
+      font-family: var(--mono); font-size: 0.78rem;
+      background: rgba(255,170,68,0.07); border: 1px solid rgba(255,170,68,0.12);
+      border-radius: 2px; padding: 0.1em 0.4em; color: var(--orange);
+    }
+    .readme-content pre {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 2px; padding: 1rem 1.2rem;
+      overflow-x: auto; margin-bottom: 0.85rem;
+    }
+    .readme-content pre code {
+      background: none; border: none; padding: 0;
+      font-size: 0.75rem; color: var(--text);
+    }
+    .readme-content blockquote {
+      border-left: 2px solid var(--dim);
+      padding-left: 1rem; margin: 0 0 0.85rem;
+      color: var(--dim);
+    }
+    .readme-content hr {
+      border: none; border-top: 1px solid var(--border);
+      margin: 1.2rem 0;
+    }
+    .readme-content a { color: var(--cyan); text-underline-offset: 2px; }
+    .readme-content strong { color: var(--text); font-weight: 500; }
+    .readme-content em { color: var(--dim); }
 
-    @media (max-width: 600px) {
-      main { padding: 2rem 1.2rem 4rem; }
-      nav { padding: 1rem 1.2rem; }
-      .slide-body { padding: 1.2rem 1.2rem 1.6rem; }
+    .readme-footer {
+      padding: 0.6rem 1.2rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      font-family: var(--mono); font-size: 0.58rem; color: var(--dim);
+      letter-spacing: 0.06em; display: flex; align-items: center; gap: 0.4rem;
+    }
+    .readme-cursor {
+      display: inline-block; width: 7px; height: 0.85em;
+      background: var(--dim); vertical-align: text-bottom;
+      animation: blink 1.1s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── MOBILE ── */
+    @media (max-width: 640px) {
+      html, body { overflow: auto; }
+      .shell { height: auto; }
+      .workspace { flex-direction: column; }
+      .list-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+      .detail-panel { min-height: 60vh; }
+      nav { padding: 0.9rem 1.2rem; }
     }
   </style>
 </head>
 <body>
 
-<nav>
-  <a class="nav-back" href="/">← konukoii.com</a>
-  <span class="nav-label">// COCO FRIO</span>
-</nav>
+<div class="shell">
+  <nav>
+    <a class="nav-back" href="/">← konukoii.com</a>
+    <span class="nav-label">// COCO FRIO</span>
+  </nav>
 
-<main>
-  <div class="page-eyebrow">◉ &nbsp;COCO FRIO</div>
-  <h1 class="page-title">a videogame <em>collection.</em></h1>
-  <p class="page-sub">back to roots — making games like i did in high school<br>last updated: may 15, 2026&nbsp;·&nbsp; more coming soon</p>
+  <div class="workspace">
 
-  <input class="game-filter" id="game-filter" type="search" placeholder="filter games..." autocomplete="off" spellcheck="false">
-  <p class="no-results" id="no-results" hidden>no games found</p>
-
-  <div class="slider-wrap">
-    <div class="slider-viewport">
-      <div class="slider-track" id="track"></div>
-    </div>
-    <div class="slider-controls" id="controls">
-      <div class="slider-dots" id="dots"></div>
-      <div class="slider-arrows">
-        <button class="arrow" id="prev" aria-label="Previous">←</button>
-        <button class="arrow" id="next" aria-label="Next">→</button>
+    <!-- LIST -->
+    <aside class="list-panel">
+      <div class="list-header">
+        <div class="list-eyebrow">◉ &nbsp;COCO FRIO</div>
+        <div class="list-title">a videogame <em>collection.</em></div>
+        <div class="list-sub">last updated: may 15, 2026</div>
       </div>
-    </div>
+      <div class="list-filter-wrap">
+        <input class="list-filter" id="list-filter" type="search" placeholder="filter..." autocomplete="off" spellcheck="false">
+      </div>
+      <div class="game-list" id="game-list"></div>
+      <div class="list-hint">
+        <div class="hint-line">
+          <span class="hint-key">W</span><span class="hint-key">S</span> navigate
+          &nbsp;·&nbsp;
+          <span class="hint-key">↵</span> play
+          &nbsp;·&nbsp;
+          <span class="hint-key">R</span> readme
+        </div>
+      </div>
+    </aside>
+
+    <!-- DETAIL -->
+    <section class="detail-panel" id="detail-panel">
+      <div class="detail-empty" id="detail-empty">— SELECT A GAME —</div>
+    </section>
+
   </div>
-</main>
+</div>
 
 <script>
-  const track     = document.getElementById('track');
-  const dotsEl    = document.getElementById('dots');
-  const prevBtn   = document.getElementById('prev');
-  const nextBtn   = document.getElementById('next');
-  const ctrl      = document.getElementById('controls');
-  const filterEl  = document.getElementById('game-filter');
-  const noResults = document.getElementById('no-results');
+  const listEl   = document.getElementById('game-list');
+  const filterEl = document.getElementById('list-filter');
+  const detailEl = document.getElementById('detail-panel');
 
-  let allSlides = [];
-  let visible   = [];
-  let current   = 0;
+  let games    = [];
+  let filtered = [];
+  let cursor   = 0;
 
-  function buildBanner(game) {
+  function renderList() {
+    listEl.innerHTML = '';
+    filtered.forEach((g, i) => {
+      const item = document.createElement('div');
+      item.className = 'list-item' + (i === cursor ? ' active' : '');
+      item.innerHTML = `<span class="list-idx">${String(i + 1).padStart(2, '0')}</span><span class="list-name">${g.name}</span>`;
+      item.addEventListener('click', () => { cursor = i; renderList(); renderDetail(); });
+      listEl.appendChild(item);
+    });
+    // scroll active item into view
+    const active = listEl.querySelector('.list-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function renderDetail() {
+    const g = filtered[cursor];
+    if (!g) {
+      detailEl.innerHTML = '<div class="detail-empty">— NO GAMES FOUND —</div>';
+      return;
+    }
+
+    const bannerWrap = document.createElement('div');
+    bannerWrap.className = 'detail-banner-wrap';
+
     const img = document.createElement('img');
-    img.className = 'slide-banner';
-    img.alt = `${game.name} banner`;
-    img.src = `${game.id}/${game.id}.png`;
+    img.className = 'detail-banner';
+    img.alt = `${g.name} banner`;
+    img.src = `${g.id}/${g.id}.png`;
     img.onerror = () => {
       const ph = document.createElement('div');
-      ph.className = 'slide-banner-placeholder';
+      ph.className = 'detail-banner-placeholder';
       ph.textContent = 'NO BANNER';
       img.replaceWith(ph);
     };
-    return img;
-  }
-
-  function buildSlide(game) {
-    const slide = document.createElement('div');
-    slide.className = 'slide';
-    slide.dataset.name = game.name.toLowerCase();
+    bannerWrap.appendChild(img);
 
     const body = document.createElement('div');
-    body.className = 'slide-body';
+    body.className = 'detail-body';
     body.innerHTML = `
-      <span class="slide-badge">${game.badge}</span>
-      <div class="slide-name">${game.name}</div>
-      <p class="slide-desc">${game.desc}</p>
-      <div class="slide-tags">${game.tags.map(t => `<span class="slide-tag">${t}</span>`).join('')}</div>
-      <div class="slide-actions">
-        <a class="btn-play" href="${game.id}/">PLAY →</a>
+      <div class="detail-badge">${g.badge}</div>
+      <div class="detail-name">${g.name}</div>
+      <p class="detail-desc">${g.desc}</p>
+      <div class="detail-tags">${g.tags.map(t => `<span class="detail-tag">${t}</span>`).join('')}</div>
+      <div class="detail-actions">
+        <a class="btn-play" href="${g.id}/">PLAY →</a>
+        <button class="btn-readme" id="btn-readme" title="Press R">// README</button>
       </div>
     `;
 
-    slide.appendChild(buildBanner(game));
-    slide.appendChild(body);
-    return slide;
+    body.querySelector('#btn-readme').addEventListener('click', () => openReadme(g));
+
+    detailEl.innerHTML = '';
+    detailEl.appendChild(bannerWrap);
+    detailEl.appendChild(body);
   }
 
-  function rebuildDots() {
-    dotsEl.innerHTML = '';
-    visible.forEach((_, i) => {
-      const d = document.createElement('button');
-      d.className = 'dot' + (i === 0 ? ' active' : '');
-      d.setAttribute('aria-label', `Game ${i + 1}`);
-      d.addEventListener('click', () => goTo(i));
-      dotsEl.appendChild(d);
-    });
-    ctrl.classList.toggle('single', visible.length <= 1);
+  function closeReadme() {
+    const backdrop = document.querySelector('.readme-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.add('closing');
+    backdrop.addEventListener('animationend', () => backdrop.remove(), { once: true });
   }
 
-  function goTo(n) {
-    if (!visible.length) return;
-    current = Math.max(0, Math.min(n, visible.length - 1));
-    track.style.transform = `translateX(-${current * 100}%)`;
-    dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === current));
-    prevBtn.disabled = current === 0;
-    nextBtn.disabled = current === visible.length - 1;
+  function openReadme(g) {
+    if (document.querySelector('.readme-backdrop')) return;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'readme-backdrop';
+    backdrop.innerHTML = `
+      <div class="readme-box">
+        <div class="readme-header">
+          <span class="readme-title">// DEV NOTES — ${g.name.toUpperCase()}</span>
+          <button class="readme-close">ESC</button>
+        </div>
+        <div class="readme-body">
+          <div class="readme-content">loading...</div>
+        </div>
+        <div class="readme-footer">
+          <span class="readme-cursor"></span> README.md
+        </div>
+      </div>
+    `;
+
+    backdrop.querySelector('.readme-close').addEventListener('click', closeReadme);
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closeReadme(); });
+    document.body.appendChild(backdrop);
+
+    fetch(`${g.id}/README.md`)
+      .then(r => { if (!r.ok) throw new Error('not found'); return r.text(); })
+      .then(text => { backdrop.querySelector('.readme-content').innerHTML = marked.parse(text.replace(/!\[.*?\]\(.*?\)/g, '')); })
+      .catch(() => { backdrop.querySelector('.readme-content').textContent = 'no README.md found for this game.'; });
   }
 
   filterEl.addEventListener('input', () => {
     const q = filterEl.value.trim().toLowerCase();
-    allSlides.forEach(s => {
-      s.style.display = (!q || s.dataset.name.includes(q)) ? '' : 'none';
-    });
-    visible = allSlides.filter(s => s.style.display !== 'none');
-    noResults.hidden = visible.length > 0;
-    current = 0;
-    rebuildDots();
-    goTo(0);
+    filtered = q ? games.filter(g => g.name.toLowerCase().includes(q)) : games.slice();
+    cursor = 0;
+    renderList();
+    renderDetail();
   });
 
-  prevBtn.addEventListener('click', () => goTo(current - 1));
-  nextBtn.addEventListener('click', () => goTo(current + 1));
-
   document.addEventListener('keydown', e => {
-    if (document.activeElement === filterEl) return;
-    if (e.key === 'ArrowLeft')  goTo(current - 1);
-    if (e.key === 'ArrowRight') goTo(current + 1);
+    if (e.key === 'Escape') { closeReadme(); return; }
+    if (document.querySelector('.readme-backdrop')) return;
+    if (e.target === filterEl && e.key !== 'Enter') return;
+    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      cursor = Math.max(0, cursor - 1);
+      renderList(); renderDetail();
+    } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      cursor = Math.min(filtered.length - 1, cursor + 1);
+      renderList(); renderDetail();
+    } else if (e.key === 'Enter' && filtered[cursor]) {
+      window.location.href = `${filtered[cursor].id}/`;
+    } else if ((e.key === 'r' || e.key === 'R') && filtered[cursor]) {
+      openReadme(filtered[cursor]);
+    }
   });
 
   fetch('games.json')
     .then(r => r.json())
-    .then(games => {
-      allSlides = games.map(g => {
-        const slide = buildSlide(g);
-        track.appendChild(slide);
-        return slide;
-      });
-      visible = allSlides.slice();
-      rebuildDots();
-      goTo(0);
+    .then(data => {
+      games    = data;
+      filtered = data.slice();
+      cursor   = 0;
+      renderList();
+      renderDetail();
     });
 </script>
 </body>

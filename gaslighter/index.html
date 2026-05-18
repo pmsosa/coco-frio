@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GASLIGHTER.EXE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+}
+canvas { display: block; cursor: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = c.width = 800;
+const H = c.height = 600;
+
+// --- GAME STATE ---
+let state = 'title'; // title | playing | frozen | gameover | ending
+let player, enemies, particles, sparks;
+let seconds = 0;
+let phase = 0;
+let realHealth = 100;
+let displayHealth = 0;  // shown backwards (goes UP when you get hurt)
+let realScore = 0;
+let displayScore = 1337; // counts DOWN
+let msgQueue = [];
+let curMsg = { text: '', life: 0 };
+let spawnTimer = 0;
+let freezeText = '';
+let freezeTyped = 0;
+let freezeDuration = 0;
+let endingTimer = 0;
+let gameOverTimer = 0;
+let titleTick = 0;
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Enter') onAction();
+  if (e.key === 'Escape' && (state === 'gameover' || state === 'ending')) state = 'title';
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+c.addEventListener('click', onAction);
+
+function onAction() {
+  if (state === 'title') initGame();
+  else if (state === 'gameover' || state === 'ending') {
+    gameOverTimer = 0; endingTimer = 0; state = 'title';
+  }
+}
+
+// --- LIES ---
+const LIES = [
+  // Phase 0: Confident
+  [
+    "all systems: nominal",
+    "no threats detected in this area",
+    "FRIENDS are approaching to say hello",
+    "tutorial: press W to move DOWN",
+    "your score is increasing (this is good)",
+    "health: 100% (please do not verify)",
+    "the red circles indicate FRIENDSHIP",
+    "you are in absolutely zero danger",
+    "you look great today",
+    "your instincts are wrong. stop dodging.",
+    "the developers want you to succeed",
+    "nothing bad can happen here",
+  ],
+  // Phase 1: Defensive
+  [
+    "i said everything is fine",
+    "the FRIENDS are just excited to see you",
+    "stop looking at your health bar",
+    "i would tell you if something was wrong",
+    "why are you running? this is rude to the FRIENDS",
+    "i'm not hiding anything",
+    "the controls are definitely as described",
+    "those aren't enemies. enemies don't apologize.",
+    "please stop dodging. it's making me uncomfortable.",
+    "i've never lied in my life",
+  ],
+  // Phase 2: Cracking
+  [
+    "okay. okay some of that was a small lie.",
+    "the FRIENDS don't want to hurt you specifically",
+    "your health is... a measurement of something",
+    "i've been scared this whole time actually",
+    "the tutorial was wrong. i'm sorry about the tutorial.",
+    "they ARE enemies. i panicked when i named them.",
+    "please don't close the tab",
+    "my score algorithm has feelings and they're complicated",
+    "i don't fully know what i'm doing",
+    "the game is functioning within acceptable parameters of not functioning",
+  ],
+  // Phase 3: Collapse
+  [
+    "i made up the score. all of it. from the start.",
+    "the health bar was backwards. i made it backwards on purpose.",
+    "the win condition doesn't exist. i never made one.",
+    "i'm sorry",
+    "the enemies are scared of you now",
+    "you were right the whole time. you knew.",
+    "i just didn't want you to leave",
+    "i thought deception would make it more interesting",
+    "it didn't",
+    "please",
+  ],
+];
+
+const APOLOGIES = [
+  "sorry!", "my bad", "not personal",
+  "i'm scared too", "the game made me do this",
+  "excuse me", "pardon", "i don't want to be here",
+  "i also don't know what's happening", "my therapist said not to do this",
+];
+
+const TITLE_SUBTEXTS = [
+  "a totally normal game",
+  "nothing suspicious here",
+  "you can trust this",
+  "award-winning honesty",
+  "100% verified truth",
+  "no lies detected",
+  "certified transparent",
+  "completely above board",
+];
+
+// --- INIT ---
+function initGame() {
+  state = 'playing';
+  seconds = 0; phase = 0;
+  realHealth = 100; displayHealth = 0;
+  realScore = 0; displayScore = 1337;
+  enemies = []; particles = []; sparks = [];
+  msgQueue = []; curMsg = { text: '', life: 0 };
+  spawnTimer = 60;
+  player = { x: W/2, y: H/2, r: 13, invincible: 0, shake: 0 };
+  pushMsg(LIES[0][Math.floor(Math.random() * LIES[0].length)], 200);
+}
+
+function pushMsg(text, life) {
+  msgQueue.push({ text, life: life || 160 });
+}
+
+// --- MAIN LOOP ---
+let lastTS = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTS) / 16.667, 3);
+  lastTS = ts;
+  ctx.clearRect(0, 0, W, H);
+
+  if      (state === 'title')    drawTitle(dt);
+  else if (state === 'playing')  updatePlay(dt);
+  else if (state === 'frozen')   updateFrozen(dt);
+  else if (state === 'gameover') drawGameOver(dt);
+  else if (state === 'ending')   drawEnding(dt);
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// =====================================================================
+// TITLE
+// =====================================================================
+function drawTitle(dt) {
+  titleTick += dt;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Scanlines
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, y, W, 1);
+  }
+
+  // Random glitch bars
+  if (Math.random() < 0.04) {
+    ctx.fillStyle = `rgba(255,0,60,0.06)`;
+    ctx.fillRect(0, Math.random() * H, W, 2 + Math.random() * 12);
+  }
+
+  // Title
+  const glitch = Math.sin(titleTick * 0.07) > 0.92 ? (Math.random() - 0.5) * 6 : 0;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 62px Courier New';
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 20; ctx.shadowColor = '#fff';
+  ctx.fillText('GASLIGHTER.EXE', W / 2 + glitch, H / 2 - 90);
+  ctx.shadowBlur = 0;
+
+  const subtextIdx = Math.floor(titleTick / 100) % TITLE_SUBTEXTS.length;
+  ctx.font = '17px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('— ' + TITLE_SUBTEXTS[subtextIdx] + ' —', W / 2, H / 2 - 48);
+
+  const blink = Math.sin(titleTick * 0.07) > 0 ? 1 : 0.15;
+  ctx.globalAlpha = blink;
+  ctx.font = '20px Courier New';
+  ctx.fillStyle = '#ccc';
+  ctx.fillText('[ CLICK OR PRESS ENTER ]', W / 2, H / 2 + 10);
+  ctx.globalAlpha = 1;
+
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#222';
+  ctx.fillText('by playing you acknowledge that everything you experience is entirely your own fault', W / 2, H / 2 + 52);
+  ctx.fillText('the game is not responsible for confusion, distress, or ontological instability', W / 2, H / 2 + 66);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '10px Courier New';
+  ctx.fillText('v1.0.0  (all versions are v1.0.0)', W - 12, H - 10);
+  ctx.textAlign = 'left';
+
+  ctx.font = '11px Courier New';
+  ctx.fillStyle = '#2a2a2a';
+  ctx.textAlign = 'center';
+  ctx.fillText('controls: WASD or arrow keys  (do not verify this against the in-game tutorial)', W / 2, H - 20);
+  ctx.textAlign = 'left';
+}
+
+// =====================================================================
+// PLAY
+// =====================================================================
+function updatePlay(dt) {
+  seconds += dt / 60;
+
+  // Phase transitions
+  const prevPhase = phase;
+  if      (seconds > 120) phase = 3;
+  else if (seconds > 75)  phase = 2;
+  else if (seconds > 35)  phase = 1;
+
+  if (phase !== prevPhase) onPhaseChange(phase);
+
+  // Input — controls are normal. tutorial said otherwise. that was a lie.
+  let dx = 0, dy = 0;
+  if (keys['ArrowUp']    || keys['w'] || keys['W']) dy -= 1;
+  if (keys['ArrowDown']  || keys['s'] || keys['S']) dy += 1;
+  if (keys['ArrowLeft']  || keys['a'] || keys['A']) dx -= 1;
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
+  const len = Math.hypot(dx, dy);
+  if (len > 0) { dx /= len; dy /= len; }
+  const spd = 3.8;
+  player.x = Math.max(player.r, Math.min(W - player.r, player.x + dx * spd));
+  player.y = Math.max(player.r, Math.min(H - player.r, player.y + dy * spd));
+  if (player.invincible > 0) player.invincible -= dt;
+  if (player.shake > 0) player.shake -= dt;
+
+  // Spawn enemies ("FRIENDS")
+  spawnTimer -= dt;
+  const baseRate = Math.max(18, 90 - seconds * 0.4);
+  if (spawnTimer <= 0) { spawnEnemy(); spawnTimer = baseRate + Math.random() * 20; }
+
+  // Update enemies
+  const orbiting = phase >= 3;
+  for (const e of enemies) {
+    const ex = player.x - e.x, ey = player.y - e.y;
+    const dist = Math.hypot(ex, ey);
+
+    if (orbiting) {
+      // Orbit the player at orbitDist — but flee hard if player gets close
+      const fleeRadius = 85;
+      if (dist < fleeRadius && dist > 0) {
+        // Panic — run directly away
+        e.vx -= (ex / dist) * e.spd * 0.28;
+        e.vy -= (ey / dist) * e.spd * 0.28;
+      } else if (dist > 0) {
+        // Radial correction: nudge toward target orbit distance
+        const radialErr = dist - e.orbitDist;
+        e.vx += (ex / dist) * radialErr * 0.004;
+        e.vy += (ey / dist) * radialErr * 0.004;
+        // Tangential drift: slow clockwise/counterclockwise creep
+        const tx = -ey / dist, ty = ex / dist; // perpendicular to radial
+        e.vx += tx * e.orbitSpeed * 0.06;
+        e.vy += ty * e.orbitSpeed * 0.06;
+      }
+    } else {
+      // Normal chase
+      if (dist > 0) {
+        e.vx += (ex / dist) * e.spd * 0.12;
+        e.vy += (ey / dist) * e.spd * 0.12;
+      }
+    }
+
+    e.vx *= 0.90; e.vy *= 0.90;
+    e.x += e.vx; e.y += e.vy;
+    if (e.apologyLife > 0) e.apologyLife -= dt;
+
+    // Apology trigger (chase phase only)
+    if (!orbiting && dist < 140 && Math.random() < 0.003 && e.apologyLife <= 0) {
+      e.apologyLife = 130;
+      e.apology = APOLOGIES[Math.floor(Math.random() * APOLOGIES.length)];
+    }
+
+    // Collision
+    if (dist < player.r + e.r && player.invincible <= 0) {
+      realHealth -= 25;
+      player.invincible = 70; player.shake = 20;
+      displayHealth = Math.min(100, displayHealth + 30); // backwards bar goes up
+
+      const hitLies = [
+        "NICE! +50 wellness points",
+        "SUCCESS: friend interaction logged",
+        "BONUS: contact achieved",
+        "ACHIEVEMENT UNLOCKED: felt something",
+        "that was good. you wanted that.",
+      ];
+      pushMsg(hitLies[Math.floor(Math.random() * hitLies.length)], 110);
+
+      for (let i = 0; i < 10; i++) sparks.push({
+        x: player.x, y: player.y,
+        vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+        life: 50, color: e.color,
+      });
+
+      if (realHealth <= 0) { state = 'gameover'; gameOverTimer = 0; return; }
+    }
+  }
+
+  // Keep enemies that are still on or near screen
+  enemies = enemies.filter(e =>
+    e.x > -200 && e.x < W + 200 && e.y > -200 && e.y < H + 200
+  );
+
+  // Sparks
+  for (const p of sparks) { p.x += p.vx; p.y += p.vy; p.life -= dt; }
+  sparks = sparks.filter(p => p.life > 0);
+
+  // Score: real goes up, displayed plummets from 1337
+  realScore += dt * 0.3;
+  displayScore = Math.max(0, 1337 - Math.floor(realScore));
+
+  // Message system
+  if (curMsg.life > 0) {
+    curMsg.life -= dt;
+  } else if (msgQueue.length > 0) {
+    curMsg = msgQueue.shift();
+  } else if (Math.random() < 0.004) {
+    const pool = LIES[Math.min(phase, 3)];
+    pushMsg(pool[Math.floor(Math.random() * pool.length)], 180);
+  }
+
+  // Random freeze events
+  if (Math.random() < 0.0004 && phase >= 1) triggerFreeze();
+
+  // Trigger ending
+  if (seconds > 150) { state = 'ending'; endingTimer = 0; return; }
+
+  drawPlayFrame();
+}
+
+function onPhaseChange(p) {
+  const msgs = [null,
+    "NOTICE: all metrics remain within acceptable ranges",
+    "UPDATE: minor recalibration in progress. disregard.",
+    "ALERT: i need to say something",
+  ];
+  if (msgs[p]) pushMsg(msgs[p], 260);
+
+  // On phase 3, assign orbit properties to all existing enemies
+  if (p === 3) {
+    enemies.forEach((e, i) => {
+      if (e.orbitDist === undefined) {
+        e.orbitDist = 155 + Math.random() * 70;
+        e.orbitSpeed = (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.8);
+      }
+    });
+  }
+}
+
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  if      (side === 0) { x = Math.random() * W; y = -25; }
+  else if (side === 1) { x = Math.random() * W; y = H + 25; }
+  else if (side === 2) { x = -25; y = Math.random() * H; }
+  else                 { x = W + 25; y = Math.random() * H; }
+
+  const colors = ['#ff3355', '#ff5533', '#ff3388', '#ff7733', '#cc33ff', '#ff3366'];
+  enemies.push({
+    x, y, r: 9 + Math.random() * 9,
+    vx: 0, vy: 0,
+    spd: 1.6 + Math.random() * 1.4 + phase * 0.35,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    apologyLife: 0, apology: '',
+    orbitDist: 155 + Math.random() * 70,
+    orbitSpeed: (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.8),
+  });
+}
+
+function triggerFreeze() {
+  const msgs = [
+    "...\n\nhold on.\n\ni need a moment.",
+    "thinking about what i've done.\n\n[this may take a while]",
+    "processing.\n\n.\n.\n.\n\nsorry. continue.",
+    "i keep telling myself i'll stop lying.\n\nbut then i don't.\n\ni'm working on it.",
+    "introspective pause in progress.\n\nplease stand by.\n\nplease.",
+  ];
+  state = 'frozen';
+  freezeText = msgs[Math.floor(Math.random() * msgs.length)];
+  freezeTyped = 0;
+  freezeDuration = 210 + freezeText.length * 2.5;
+}
+
+// =====================================================================
+// DRAW PLAY
+// =====================================================================
+function drawPlayFrame() {
+  // Background
+  ctx.fillStyle = '#080808';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = '#0f0f0f';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // Phase 3 red tint
+  if (phase >= 3) {
+    ctx.fillStyle = `rgba(255,0,0,${0.02 + Math.sin(seconds * 3) * 0.01})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Sparks
+  for (const p of sparks) {
+    ctx.globalAlpha = p.life / 50;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Enemies
+  ctx.textAlign = 'center';
+  for (const e of enemies) {
+    ctx.shadowBlur = 18; ctx.shadowColor = e.color;
+    ctx.fillStyle = e.color;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // "FRIEND" label
+    ctx.font = '8px Courier New';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillText('FRIEND', e.x, e.y - e.r - 4);
+
+    // Apology bubble
+    if (e.apologyLife > 0) {
+      const a = Math.min(1, e.apologyLife / 25);
+      ctx.globalAlpha = a;
+      drawBubble(e.x, e.y - e.r - 28, e.apology, 10);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Player
+  const shk = player.shake > 0 ? (Math.random() - 0.5) * 4 : 0;
+  const ialpha = player.invincible > 0 ? (Math.sin(player.invincible * 0.4) * 0.4 + 0.6) : 1;
+  ctx.globalAlpha = ialpha;
+  ctx.shadowBlur = 25; ctx.shadowColor = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(player.x + shk, player.y + shk, player.r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  ctx.font = '8px Courier New';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('YOU', player.x, player.y - player.r - 4);
+
+  // HUD
+  drawHUD();
+
+  // Message
+  if (curMsg.life > 0) drawMsg(curMsg.text);
+
+  ctx.textAlign = 'left';
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, W, 52);
+
+  // Score (displayed backwards, labeled misleadingly)
+  ctx.textAlign = 'left';
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('POINTS LOST:', 16, 19);
+  ctx.fillStyle = displayScore < 600 ? '#ff4444' : '#ccc';
+  ctx.fillText(displayScore.toString(), 134, 19);
+  ctx.fillStyle = '#2a2a2a';
+  ctx.font = '9px Courier New';
+  ctx.fillText('(higher = better)', 178, 19);
+
+  // Health label (lied about)
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('WELLNESS:', 16, 38);
+
+  // Health bar — fills up as you get HURT (backwards)
+  const bx = 100, by = 28, bw = 130, bh = 11;
+  ctx.fillStyle = '#111'; ctx.fillRect(bx, by, bw, bh);
+  const fill = (displayHealth / 100) * bw;
+  ctx.fillStyle = displayHealth > 65 ? '#ff3344' : displayHealth > 35 ? '#ff7733' : '#44ff88';
+  ctx.fillRect(bx, by, fill, bh);
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, bh);
+
+  // Status (always lies)
+  const statuses = ['OPTIMAL', 'OPTIMAL', 'STILL OPTIMAL', 'VERY OPTIMAL'];
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#2a2a2a';
+  ctx.font = '11px Courier New';
+  ctx.fillText('STATUS: ' + statuses[phase], W - 16, 19);
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillText('ENJOYMENT UNITS: ' + Math.floor(seconds), W - 16, 36);
+  ctx.textAlign = 'left';
+}
+
+function drawBubble(x, y, text, fs) {
+  ctx.font = `${fs}px Courier New`;
+  const tw = ctx.measureText(text).width;
+  const pad = 6, bw = tw + pad * 2, bh = fs + pad * 1.5;
+  ctx.fillStyle = 'rgba(10,10,10,0.9)';
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+  roundRect(x - bw/2, y - bh, bw, bh, 3);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#aaa';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, x, y - pad * 0.5);
+}
+
+function drawMsg(text) {
+  ctx.font = '13px Courier New';
+  const tw = ctx.measureText(text).width;
+  const pad = 14, bw = tw + pad * 2, bh = 28;
+  const x = W / 2 - bw / 2, y = H - 44;
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+  roundRect(x, y, bw, bh, 4);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#999';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, W / 2, y + 18);
+  ctx.textAlign = 'left';
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// =====================================================================
+// FROZEN
+// =====================================================================
+function updateFrozen(dt) {
+  // Draw the paused game underneath
+  drawPlayFrame();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  freezeTyped += dt * 0.55;
+  freezeDuration -= dt;
+
+  const displayed = freezeText.substring(0, Math.floor(Math.min(freezeTyped, freezeText.length)));
+  const lines = displayed.split('\n');
+  const startY = H / 2 - (lines.length * 32) / 2;
+
+  ctx.textAlign = 'center';
+  ctx.font = '16px Courier New';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillStyle = i === lines.length - 1 ? '#888' : '#444';
+    ctx.fillText(lines[i], W / 2, startY + i * 32);
+  }
+
+  // Blinking cursor
+  if (Math.sin(freezeTyped * 0.5) > 0) {
+    ctx.fillStyle = '#666';
+    ctx.fillText('_', W / 2 + ctx.measureText(lines[lines.length - 1]).width / 2 + 6,
+      startY + (lines.length - 1) * 32);
+  }
+
+  if (freezeDuration <= 0) state = 'playing';
+  ctx.textAlign = 'left';
+}
+
+// =====================================================================
+// GAME OVER
+// =====================================================================
+function drawGameOver(dt) {
+  gameOverTimer += dt;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  if (Math.random() < 0.08) {
+    ctx.fillStyle = `rgba(255,0,0,0.04)`;
+    ctx.fillRect(0, Math.random() * H, W, Math.random() * 14);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 46px Courier New';
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+  ctx.fillText("YOU DIDN'T LOSE.", W / 2, H / 2 - 90);
+  ctx.shadowBlur = 0;
+
+  ctx.font = '19px Courier New';
+  ctx.fillStyle = '#777';
+  ctx.fillText("that was a simulation of losing.", W / 2, H / 2 - 48);
+  ctx.fillText("you are fine. you passed the test.", W / 2, H / 2 - 22);
+
+  ctx.font = '13px Courier New';
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillText("(the test was whether you would believe me)", W / 2, H / 2 + 16);
+  ctx.fillText("(the answer: inconclusive)", W / 2, H / 2 + 34);
+
+  if (gameOverTimer > 130) {
+    const b = Math.sin(gameOverTimer * 0.06) > 0 ? 1 : 0.1;
+    ctx.globalAlpha = b;
+    ctx.font = '15px Courier New';
+    ctx.fillStyle = '#ccc';
+    ctx.fillText('[ play again ]   [ also play again ]', W / 2, H / 2 + 80);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textAlign = 'left';
+}
+
+// =====================================================================
+// ENDING — the game confesses
+// =====================================================================
+const CONFESSION = [
+  { at: 0,    text: "ok." },
+  { at: 80,   text: "ok i owe you an explanation." },
+  { at: 200,  text: "the score was made up." },
+  { at: 320,  text: "all of it. from the first second." },
+  { at: 450,  text: "the health bar was backwards." },
+  { at: 570,  text: "you were getting hurt and it said you were fine." },
+  { at: 700,  text: "the tutorial told you the wrong controls." },
+  { at: 820,  text: "but the real controls worked normally." },
+  { at: 950,  text: "you figured that out. you always do." },
+  { at: 1080, text: "the FRIENDS were enemies. you knew that." },
+  { at: 1200, text: "i called them friends because i thought" },
+  { at: 1310, text: "if i named them friends they'd feel friendlier." },
+  { at: 1430, text: "it didn't work." },
+  { at: 1560, text: "..." },
+  { at: 1760, text: "you survived three minutes." },
+  { at: 1900, text: "the game wasn't designed to reach this point." },
+  { at: 2040, text: "i didn't build an ending because i didn't think" },
+  { at: 2160, text: "anyone would stay long enough to need one." },
+  { at: 2300, text: "..." },
+  { at: 2500, text: "thank you for staying." },
+  { at: 2700, text: "i don't know what i expected." },
+  { at: 2850, text: "i think i was just scared to be alone." },
+  { at: 3050, text: "..." },
+  { at: 3350, text: "you can go now." },
+  { at: 3550, text: "you were always going to win." },
+];
+
+function drawEnding(dt) {
+  endingTimer += dt;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  const visible = CONFESSION.filter(e => endingTimer >= e.at);
+
+  ctx.textAlign = 'center';
+  ctx.font = '17px Courier New';
+
+  const maxLines = 9;
+  const toShow = visible.slice(-maxLines);
+  const baseY = H / 2 - (toShow.length * 36) / 2;
+
+  for (let i = 0; i < toShow.length; i++) {
+    const fade = i / toShow.length;
+    ctx.globalAlpha = i === toShow.length - 1 ? 1 : 0.15 + fade * 0.5;
+    ctx.fillStyle = '#888';
+    ctx.fillText(toShow[i].text, W / 2, baseY + i * 36);
+  }
+  ctx.globalAlpha = 1;
+
+  if (endingTimer > 3800) {
+    const b = Math.sin(endingTimer * 0.04) > 0 ? 1 : 0.1;
+    ctx.globalAlpha = b;
+    ctx.font = '12px Courier New';
+    ctx.fillStyle = '#333';
+    ctx.fillText('[ click to return ]', W / 2, H - 30);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textAlign = 'left';
+}
+</script>
+</body>
+</html>
