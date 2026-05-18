@@ -618,11 +618,13 @@ function drawHUD() {
   if (mhov) glow('#fff', 8);
   ctx.fillText('≡ MENU', mb.x+4, mb.y+mb.h/2); noGlow(); ctx.restore();
 
-  // Title
-  ctx.save(); ctx.font='bold 22px "Courier New", monospace';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillStyle='#fff'; glow('#fff',10);
-  ctx.fillText('CONQUEST', l.W/2, l.oy-44); noGlow(); ctx.restore();
+  // Title — hidden when game is over (win text takes its place)
+  if (!G.over) {
+    ctx.save(); ctx.font='bold 22px "Courier New", monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#fff'; glow('#fff',10);
+    ctx.fillText('CONQUEST', l.W/2, l.oy-44); noGlow(); ctx.restore();
+  }
 
   if (!G.over) {
     const isCPU = M.mode === 'cpu' && G.player === 'O';
@@ -672,12 +674,12 @@ function drawHUD() {
     ctx.font=`bold ${Math.round(36*sc)}px "Courier New", monospace`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle=wCol; glow(wCol, 35+18*Math.sin(t*4));
-    ctx.fillText(label, l.W/2, l.oy-30); ctx.restore();
+    ctx.fillText(label, l.W/2, l.oy-44); ctx.restore();
 
     ctx.save(); ctx.globalAlpha=Math.min(Math.max(G.winAnim-0.4,0)*2.5, 1);
     ctx.font='11px "Courier New", monospace'; ctx.textAlign='center';
     ctx.fillStyle='rgba(255,255,255,0.5)';
-    ctx.fillText('CLICK TO PLAY AGAIN  ·  ESC FOR MENU', l.W/2, l.oy-9);
+    ctx.fillText('CLICK TO PLAY AGAIN  ·  ESC FOR MENU', l.W/2, l.oy-20);
     ctx.restore();
 
     if (G.winner!=='DRAW' && Math.random()<0.5) {
