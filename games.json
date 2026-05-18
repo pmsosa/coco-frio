@@ -33,5 +33,12 @@
     "badge": "ARCADE · TYPING · 1 PLAYER",
     "desc": "Enemies march in from the right — type their words to kill them. Move with F and J (home row, always) while your fingers are busy with the word. Don't stop typing. Don't look at your hands.",
     "tags": ["Vanilla JS", "Canvas", "Typing", "Arcade", "Survival"]
+  },
+  {
+    "id": "conquest",
+    "name": "CONQUEST",
+    "badge": "STRATEGY · BLITZ · 2 PLAYERS",
+    "desc": "Ultimate Tic Tac Toe, but winning any single board wins the whole game. Nine boards, neon explosions, glitch effects, and two players sharing a keyboard until someone has had enough.",
+    "tags": ["Vanilla JS", "Canvas", "2 Player", "Strategy", "Web Audio"]
   }
 ]

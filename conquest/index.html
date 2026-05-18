@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONQUEST — Ultimate Tic Tac Toe</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #05050a; overflow: hidden; }
+    #c { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const C = {
+  bg:     '#05050a',
+  bgGrid: 'rgba(18, 18, 55, 0.22)',
+  X:      '#00f0ff',
+  O:      '#ff0077',
+  active: '#ffd700',
+  drawn:  '#333355',
+  easy:   '#00dd88',
+  medium: '#ffd700',
+  hard:   '#ff3333',
+};
+
+const WIN_LINES = [
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6]
+];
+
+// ── CANVAS ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', () => { resize(); if (M) M.stars = genStars(); });
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function genStars() {
+  return Array(200).fill(null).map(() => ({
+    x: Math.random(), y: Math.random(),
+    r: 0.3 + Math.random() * 1.3,
+    ph: Math.random() * Math.PI * 2,
+    sp: 0.008 + Math.random() * 0.035
+  }));
+}
+function hexRgb(h) {
+  const m = /^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);
+  return m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [255,255,255];
+}
+function rgba(hex, a) { const [r,g,b] = hexRgb(hex); return `rgba(${r},${g},${b},${a})`; }
+function glow(col, blur) { ctx.shadowColor = col; ctx.shadowBlur = blur; }
+function noGlow() { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+
+// ── META STATE  (persists across games) ──────────────────────────────────────
+// screen: 'select' | 'difficulty' | 'playing'
+// mode:   '2p' | 'cpu'
+// diff:   'easy' | 'medium' | 'hard'
+let M = { screen: 'select', mode: '2p', diff: 'medium', hover: null, stars: genStars(), t: 0 };
+
+// ── GEOMETRY ─────────────────────────────────────────────────────────────────
+function L() {
+  const W = canvas.width, H = canvas.height;
+  const TOP = 72, BOT = 44;
+  const sz   = Math.min(W - 32, H - TOP - BOT);
+  const ox   = (W - sz) / 2;
+  const oy   = TOP + (H - TOP - BOT - sz) / 2;
+  const SEP  = sz * 0.026;
+  const mega = (sz - SEP * 2) / 3;
+  const PAD  = mega * 0.09;
+  const play = mega - PAD * 2;
+  const gap  = play * 0.038;
+  const cell = (play - gap * 2) / 3;
+  return { W, H, sz, ox, oy, SEP, mega, PAD, play, gap, cell };
+}
+function boardRect(b) {
+  const l = L(), r = Math.floor(b/3), c = b%3;
+  return { x: l.ox + c*(l.mega+l.SEP), y: l.oy + r*(l.mega+l.SEP), w: l.mega, h: l.mega };
+}
+function cellRect(b, c) {
+  const l = L(), br = boardRect(b), r = Math.floor(c/3), cc = c%3;
+  return { x: br.x + l.PAD + cc*(l.cell+l.gap), y: br.y + l.PAD + r*(l.cell+l.gap), w: l.cell, h: l.cell };
+}
+function hitTest(mx, my) {
+  for (let b = 0; b < 9; b++) {
+    const board = G.boards[b];
+    if (board.winner) continue;
+    if (G.active !== null && G.active !== b) continue;
+    const br = boardRect(b);
+    if (mx < br.x || mx > br.x+br.w || my < br.y || my > br.y+br.h) continue;
+    for (let c = 0; c < 9; c++) {
+      if (board.cells[c]) continue;
+      const cr = cellRect(b, c);
+      if (mx >= cr.x && mx <= cr.x+cr.w && my >= cr.y && my <= cr.y+cr.h) return { b, c };
+    }
+  }
+  return null;
+}
+
+// ── MENU LAYOUT ───────────────────────────────────────────────────────────────
+function selectCards() {
+  const W = canvas.width, H = canvas.height;
+  const cw = Math.min(W * 0.3, 270), ch = Math.min(H * 0.32, 210);
+  const gap = Math.min(W * 0.06, 64);
+  const sx = (W - (cw*2 + gap)) / 2, sy = H/2 - ch/2 + 24;
+  return [
+    { id: '2p',  x: sx,        y: sy, w: cw, h: ch, label: '2 PLAYER', d1: 'two humans', d2: 'same screen',       col: C.X },
+    { id: 'cpu', x: sx+cw+gap, y: sy, w: cw, h: ch, label: 'VS CPU',   d1: 'you vs machine', d2: 'choose difficulty', col: C.O },
+  ];
+}
+function diffCards() {
+  const W = canvas.width, H = canvas.height;
+  const cw = Math.min(W * 0.22, 210), ch = Math.min(H * 0.32, 210);
+  const gap = Math.min(W * 0.04, 44);
+  const sx = (W - (cw*3 + gap*2)) / 2, sy = H/2 - ch/2 + 24;
+  return [
+    { id: 'easy',   x: sx,              y: sy, w: cw, h: ch, label: 'EASY',   d1: 'random moves', d2: 'just vibing',   col: C.easy   },
+    { id: 'medium', x: sx+cw+gap,       y: sy, w: cw, h: ch, label: 'MEDIUM', d1: 'wins when it can', d2: 'blocks threats', col: C.medium },
+    { id: 'hard',   x: sx+(cw+gap)*2,   y: sy, w: cw, h: ch, label: 'HARD',   d1: 'optimal play', d2: 'no mercy',      col: C.hard   },
+  ];
+}
+function backBtn() { return { id: 'back', x: 18, y: 18, w: 80, h: 28 }; }
+function menuBtn() { return { id: 'menu', x: 16, y: 16, w: 68, h: 22 }; }
+
+// ── GAME STATE ────────────────────────────────────────────────────────────────
+let G = null;
+
+function newGame() {
+  return {
+    boards:      Array(9).fill(null).map(() => ({ cells: Array(9).fill(null), winner: null, winLine: null })),
+    player:      'X',
+    active:      null,
+    winner:      null,
+    over:        false,
+    lastMove:    null,
+    particles:   [],
+    ripples:     [],
+    stars:       genStars(),
+    shake:       { x: 0, y: 0 },
+    cellAnims:   {},
+    boardAnims:  {},
+    winAnim:     0,
+    t:           0,
+    hover:       null,
+    menuHover:   false,
+    glitch:      0,
+    cpuThinking: false,
+    cpuTimer:    null,
+  };
+}
+
+// ── GAME LOGIC ────────────────────────────────────────────────────────────────
+function checkWin(cells) {
+  for (const [a,b,c] of WIN_LINES)
+    if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
+  return null;
+}
+function getWinLine(cells) {
+  for (const line of WIN_LINES) {
+    const [a,b,c] = line;
+    if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return line;
+  }
+  return null;
+}
+
+function play(bi, ci) {
+  if (G.over) return;
+  const board = G.boards[bi];
+  if (board.cells[ci] || board.winner) return;
+  if (G.active !== null && G.active !== bi) return;
+
+  const p = G.player;
+  board.cells[ci] = p;
+  G.lastMove = { bi, ci };
+  G.cellAnims[`${bi}-${ci}`] = { v: 0, p };
+
+  const cr = cellRect(bi, ci);
+  G.ripples.push({ x: cr.x+cr.w/2, y: cr.y+cr.h/2, r: 0, life: 1, color: p === 'X' ? C.X : C.O });
+
+  beep(p === 'X' ? 460 : 340, 0.09, 'square', 0.12);
+
+  const w = checkWin(board.cells);
+  if (w) {
+    board.winner = w;
+    board.winLine = getWinLine(board.cells);
+    G.boardAnims[bi] = { v: 0, p: w };
+    // ★ win any board = win the game ★
+    G.winner = w;
+    G.over   = true;
+    G.winAnim = 0;
+    G.glitch  = 1;
+    G.cpuThinking = false;
+    const br = boardRect(bi);
+    explode(br.x+br.w/2, br.y+br.h/2, p, 120);
+    doShake(20);
+    playWinFanfare(p);
+    return;
+  }
+
+  if (board.cells.every(Boolean)) board.winner = 'draw';
+
+  const nb = G.boards[ci];
+  G.active = (nb.winner || nb.cells.every(Boolean)) ? null : ci;
+
+  if (!G.over && G.boards.every(b => b.winner)) {
+    G.winner = 'DRAW'; G.over = true; G.winAnim = 0;
+    return;
+  }
+
+  G.player = G.player === 'X' ? 'O' : 'X';
+
+  if (!G.over && M.mode === 'cpu' && G.player === 'O') scheduleCPU();
+}
+
+// ── CPU AI ─────────────────────────────────────────────────────────────────────
+function availMoves() {
+  const out = [];
+  for (let b = 0; b < 9; b++) {
+    const board = G.boards[b];
+    if (board.winner) continue;
+    if (G.active !== null && G.active !== b) continue;
+    for (let c = 0; c < 9; c++) if (!board.cells[c]) out.push({ b, c });
+  }
+  return out;
+}
+
+function canWinBoard(b, player) {
+  const board = G.boards[b];
+  if (board.winner) return false;
+  for (let c = 0; c < 9; c++) {
+    if (!board.cells[c]) {
+      const t = [...board.cells]; t[c] = player;
+      if (checkWin(t)) return true;
+    }
+  }
+  return false;
+}
+
+function cellScore(c) { return c === 4 ? 3 : [0,2,6,8].includes(c) ? 2 : 1; }
+
+function twoInRow(cells, p) {
+  let n = 0;
+  for (const [a,b,c] of WIN_LINES) {
+    const line = [cells[a], cells[b], cells[c]];
+    if (line.filter(x => x === p).length === 2 && line.filter(x => !x).length === 1) n++;
+  }
+  return n;
+}
+
+function cpuMove() {
+  const moves = availMoves();
+  if (!moves.length) return null;
+  if (M.diff === 'easy')   return moves[Math.floor(Math.random() * moves.length)];
+  if (M.diff === 'medium') return mediumMove(moves);
+  return hardMove(moves);
+}
+
+function mediumMove(moves) {
+  // Win if possible
+  for (const m of moves) {
+    const t = [...G.boards[m.b].cells]; t[m.c] = 'O';
+    if (checkWin(t)) return m;
+  }
+  // Block human win
+  for (const m of moves) {
+    const t = [...G.boards[m.b].cells]; t[m.c] = 'X';
+    if (checkWin(t)) return m;
+  }
+  return moves[Math.floor(Math.random() * moves.length)];
+}
+
+function hardMove(moves) {
+  // 1. Take any game-winning move
+  for (const m of moves) {
+    const t = [...G.boards[m.b].cells]; t[m.c] = 'O';
+    if (checkWin(t)) return m;
+  }
+  // 2. Block all human board wins
+  const blocks = moves.filter(m => {
+    const t = [...G.boards[m.b].cells]; t[m.c] = 'X';
+    return checkWin(t);
+  });
+  if (blocks.length) return scoredPick(blocks);
+
+  // 3. Avoid routing human to a board where they can win
+  const safe = moves.filter(m => {
+    const nb = G.boards[m.c];
+    return nb.winner || nb.cells.every(Boolean) || !canWinBoard(m.c, 'X');
+  });
+  return scoredPick(safe.length ? safe : moves);
+}
+
+function scoredPick(moves) {
+  let best = moves[0], bestS = -Infinity;
+  for (const m of moves) {
+    let s = cellScore(m.c);
+    const test = [...G.boards[m.b].cells]; test[m.c] = 'O';
+    s += twoInRow(test, 'O') * 3;
+    s -= twoInRow(test, 'X') * 1.5;
+    // Penalise routing human to boards they're strong in
+    const nb = G.boards[m.c];
+    if (!nb.winner && !nb.cells.every(Boolean)) {
+      if (twoInRow(nb.cells, 'X') > 0) s -= 2;
+      if (twoInRow(nb.cells, 'O') > 0) s += 1;
+    }
+    s += Math.random() * 0.4;
+    if (s > bestS) { bestS = s; best = m; }
+  }
+  return best;
+}
+
+function scheduleCPU() {
+  if (G.cpuThinking) return;
+  G.cpuThinking = true;
+  const delay = M.diff === 'hard' ? 220 + Math.random()*160
+              : M.diff === 'medium' ? 380 + Math.random()*200
+              : 520 + Math.random()*280;
+  G.cpuTimer = setTimeout(() => {
+    if (!G || G.over || G.player !== 'O') { if (G) G.cpuThinking = false; return; }
+    G.cpuThinking = false;
+    const m = cpuMove();
+    if (m) play(m.b, m.c);
+  }, delay);
+}
+
+// ── AUDIO ─────────────────────────────────────────────────────────────────────
+let AC = null;
+function getAC() { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); return AC; }
+
+function beep(freq, dur, type = 'sine', vol = 0.25) {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.value = freq; o.type = type;
+    g.gain.setValueAtTime(vol, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch(e) {}
+}
+function playWinFanfare(p) {
+  const base = p === 'X' ? 523 : 415;
+  [[0,0],[80,1.25],[180,1.5],[300,2],[440,2.5]].forEach(([ms, mul]) =>
+    setTimeout(() => beep(base * mul, 0.35 + ms*0.001, 'sine', 0.22), ms)
+  );
+}
+
+// ── PARTICLES ────────────────────────────────────────────────────────────────
+function explode(x, y, p, n = 40) {
+  const col = p === 'X' ? C.X : C.O;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random()*Math.PI*2, s = 4 + Math.random()*12;
+    G.particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, decay: 0.008+Math.random()*0.016, r: 2+Math.random()*5, col });
+  }
+  for (let i = 0; i < 50; i++) {
+    const a = Math.random()*Math.PI*2, s = 6 + Math.random()*18;
+    G.particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, decay: 0.02+Math.random()*0.03, r: 1+Math.random()*3, col: '#fff' });
+  }
+}
+function doShake(i) { G.shake.x = (Math.random()-0.5)*i; G.shake.y = (Math.random()-0.5)*i; }
+
+// ── SHARED DRAW PRIMS ────────────────────────────────────────────────────────
+function drawStars(stars) {
+  for (const s of stars) {
+    s.ph += s.sp;
+    const a = 0.15 + 0.55 * Math.abs(Math.sin(s.ph));
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.beginPath();
+    ctx.arc(s.x * canvas.width, s.y * canvas.height, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+function drawBaseBg(stars) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save(); ctx.strokeStyle = C.bgGrid; ctx.lineWidth = 0.5;
+  for (let x = 0; x < canvas.width; x += 48) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+  for (let y = 0; y < canvas.height; y += 48) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+  ctx.restore();
+  drawStars(stars);
+}
+function drawCRT() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.055)';
+  for (let y = 0; y < canvas.height; y += 4) ctx.fillRect(0, y, canvas.width, 2);
+  const gr = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height*0.2, canvas.width/2, canvas.height/2, canvas.height*0.8);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+function drawX(cx, cy, r, prog, col) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = Math.max(r*0.22, 2); ctx.lineCap = 'round'; glow(col, 16);
+  const p1 = Math.min(prog*2, 1);
+  if (p1>0) { ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx-r+r*2*p1,cy-r+r*2*p1); ctx.stroke(); }
+  const p2 = Math.max(prog*2-1, 0);
+  if (p2>0) { ctx.beginPath(); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx+r-r*2*p2,cy-r+r*2*p2); ctx.stroke(); }
+  ctx.restore();
+}
+function drawO(cx, cy, r, prog, col) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = Math.max(r*0.22, 2); ctx.lineCap = 'round'; glow(col, 16);
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + Math.PI*2*prog); ctx.stroke();
+  ctx.restore();
+}
+
+// ── MENU SCREENS ─────────────────────────────────────────────────────────────
+function drawMenuCard(card) {
+  const hov = M.hover === card.id;
+  ctx.save();
+  ctx.fillStyle = rgba(card.col, hov ? 0.15 : 0.05);
+  ctx.fillRect(card.x, card.y, card.w, card.h);
+  ctx.strokeStyle = card.col; ctx.lineWidth = hov ? 2.5 : 1.5;
+  glow(card.col, hov ? 28 : 10);
+  ctx.strokeRect(card.x, card.y, card.w, card.h);
+  const fs = Math.max(card.w * 0.13, 15);
+  ctx.font = `bold ${fs}px "Courier New", monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = card.col; glow(card.col, hov ? 18 : 8);
+  ctx.fillText(card.label, card.x+card.w/2, card.y+card.h/2 - fs*0.7);
+  ctx.font = `${Math.max(fs*0.54, 10)}px "Courier New", monospace`;
+  ctx.fillStyle = rgba(card.col, hov ? 0.9 : 0.55); noGlow();
+  ctx.fillText(card.d1, card.x+card.w/2, card.y+card.h/2 + fs*0.15);
+  ctx.fillText(card.d2, card.x+card.w/2, card.y+card.h/2 + fs*0.85);
+  ctx.restore();
+}
+
+function drawMenuTitle(W, H, t) {
+  ctx.save();
+  const fs = Math.min(W*0.058, 50);
+  ctx.font = `bold ${fs}px "Courier New", monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff'; glow('#fff', 14 + 5*Math.sin(t*1.5));
+  ctx.fillText('CONQUEST', W/2, H*0.24);
+  noGlow(); ctx.restore();
+}
+
+function drawSelectScreen() {
+  M.t += 0.016;
+  drawBaseBg(M.stars);
+  const { W, H } = { W: canvas.width, H: canvas.height };
+  drawMenuTitle(W, H, M.t);
+  ctx.save();
+  ctx.font = `${Math.min(W*0.021,15)}px "Courier New", monospace`;
+  ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('SELECT MODE', W/2, H*0.24 + Math.min(W*0.058,50)*0.9);
+  ctx.restore();
+  for (const card of selectCards()) drawMenuCard(card);
+  ctx.save();
+  ctx.font = '10px "Courier New", monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.17)';
+  ctx.fillText('WIN ANY BOARD = WIN THE GAME', W/2, H - 18);
+  ctx.restore();
+  drawCRT();
+}
+
+function drawDifficultyScreen() {
+  M.t += 0.016;
+  drawBaseBg(M.stars);
+  const { W, H } = { W: canvas.width, H: canvas.height };
+  drawMenuTitle(W, H, M.t);
+  ctx.save();
+  ctx.font = `${Math.min(W*0.021,15)}px "Courier New", monospace`;
+  ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('SELECT DIFFICULTY  [YOU = X  ·  CPU = O]', W/2, H*0.24 + Math.min(W*0.058,50)*0.9);
+  ctx.restore();
+  const bb = backBtn(), hov = M.hover === 'back';
+  ctx.save();
+  ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = hov ? '#fff' : 'rgba(255,255,255,0.4)';
+  if (hov) glow('#fff', 10);
+  ctx.fillText('← BACK', bb.x+6, bb.y+bb.h/2); noGlow();
+  ctx.restore();
+  for (const card of diffCards()) drawMenuCard(card);
+  drawCRT();
+}
+
+// ── GAME DRAW ─────────────────────────────────────────────────────────────────
+function drawGameBg() { drawBaseBg(G.stars); }
+
+function drawBoard(bi) {
+  const board = G.boards[bi], br = boardRect(bi), l = L(), t = G.t;
+  const won    = board.winner && board.winner !== 'draw';
+  const drawn  = board.winner === 'draw';
+  const active = !G.over && (G.active === null ? !board.winner : G.active === bi);
+  const locked = !G.over && G.active !== null && G.active !== bi && !board.winner;
+  const wCol   = won ? (board.winner === 'X' ? C.X : C.O) : null;
+
+  ctx.save();
+  if (won)         ctx.fillStyle = rgba(wCol, 0.07 + 0.04*Math.sin(t*2.2));
+  else if (drawn)  ctx.fillStyle = 'rgba(50,50,90,0.08)';
+  else if (active) ctx.fillStyle = `rgba(255,210,0,${0.03+0.018*Math.sin(t*5)})`;
+  else if (locked) ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  if (won||drawn||active||locked) ctx.fillRect(br.x, br.y, br.w, br.h);
+  ctx.restore();
+
+  ctx.save();
+  if (active) {
+    const pulse = 0.55 + 0.45*Math.sin(t*5);
+    ctx.strokeStyle = `rgba(255,210,0,${pulse})`; ctx.lineWidth = 2.5;
+    glow(C.active, 22*pulse);
+    for (let i = 0; i < 3; i++) {
+      const jx=(Math.random()-0.5)*1.8, jy=(Math.random()-0.5)*1.8;
+      ctx.strokeRect(br.x+jx, br.y+jy, br.w, br.h);
+    }
+  } else if (won) {
+    ctx.strokeStyle = wCol; ctx.lineWidth = 2.5;
+    glow(wCol, 14+8*Math.sin(t*2)); ctx.strokeRect(br.x, br.y, br.w, br.h);
+  } else if (drawn) {
+    ctx.strokeStyle = C.drawn; ctx.lineWidth = 1; noGlow(); ctx.strokeRect(br.x, br.y, br.w, br.h);
+  } else if (locked) {
+    ctx.strokeStyle = 'rgba(40,40,80,0.35)'; ctx.lineWidth = 1; noGlow(); ctx.strokeRect(br.x, br.y, br.w, br.h);
+  } else {
+    ctx.strokeStyle = 'rgba(55,55,130,0.75)'; ctx.lineWidth = 1.5; noGlow(); ctx.strokeRect(br.x, br.y, br.w, br.h);
+  }
+  ctx.restore();
+
+  if (!won && !drawn) {
+    ctx.save(); ctx.strokeStyle = active ? C.active : 'rgba(70,70,150,0.9)';
+    ctx.lineWidth = 1; ctx.globalAlpha = active ? 0.3 : 0.16;
+    if (active) glow(C.active, 5);
+    for (let i = 1; i < 3; i++) {
+      const lx = br.x + l.PAD + i*(l.cell+l.gap) - l.gap*0.5;
+      const ly = br.y + l.PAD + i*(l.cell+l.gap) - l.gap*0.5;
+      ctx.beginPath(); ctx.moveTo(lx, br.y+l.PAD*0.5); ctx.lineTo(lx, br.y+br.h-l.PAD*0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(br.x+l.PAD*0.5, ly); ctx.lineTo(br.x+br.w-l.PAD*0.5, ly); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  for (let c = 0; c < 9; c++) drawCell(bi, c);
+  if (won) { const ba = G.boardAnims[bi]; drawWinOverlay(bi, board.winner, ba ? Math.min(ba.v,1) : 1); }
+}
+
+function drawCell(bi, ci) {
+  const board = G.boards[bi], cr = cellRect(bi, ci), cell = board.cells[ci];
+  const isCPUTurn = M.mode === 'cpu' && G.player === 'O';
+  const hover = !isCPUTurn && G.hover && G.hover.b===bi && G.hover.c===ci && !cell && !board.winner && !G.over;
+
+  if (hover) {
+    const pc = G.player === 'X' ? C.X : C.O;
+    ctx.save();
+    ctx.fillStyle = rgba(pc, 0.07+0.04*Math.sin(G.t*9)); ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
+    ctx.strokeStyle = pc; ctx.lineWidth = 1; ctx.globalAlpha = 0.28;
+    ctx.strokeRect(cr.x+1, cr.y+1, cr.w-2, cr.h-2); ctx.restore();
+    ctx.save(); ctx.globalAlpha = 0.18;
+    const cxh=cr.x+cr.w/2, cyh=cr.y+cr.h/2, rh=cr.w*0.3;
+    if (G.player==='X') drawX(cxh,cyh,rh,1,C.X); else drawO(cxh,cyh,rh,1,C.O);
+    ctx.restore();
+  }
+  if (!cell) return;
+  const anim = G.cellAnims[`${bi}-${ci}`];
+  const prog = anim ? Math.min(anim.v,1) : 1;
+  const cx=cr.x+cr.w/2, cy=cr.y+cr.h/2, r=cr.w*0.3;
+  if (cell==='X') drawX(cx,cy,r,prog,C.X); else drawO(cx,cy,r,prog,C.O);
+}
+
+function drawWinOverlay(bi, player, ap) {
+  const br = boardRect(bi), board = G.boards[bi], col = player==='X' ? C.X : C.O;
+  ctx.save(); ctx.fillStyle = rgba(col, 0.13*ap); ctx.fillRect(br.x, br.y, br.w, br.h); ctx.restore();
+  const cx=br.x+br.w/2, cy=br.y+br.h/2, r=br.w*0.27;
+  ctx.save(); ctx.globalAlpha = 0.52*ap;
+  if (player==='X') drawX(cx,cy,r,1,col); else drawO(cx,cy,r,1,col);
+  ctx.restore();
+  if (board.winLine && ap > 0.45) {
+    const lp = Math.min((ap-0.45)/0.55, 1);
+    const cr0=cellRect(bi,board.winLine[0]), cr2=cellRect(bi,board.winLine[2]);
+    const x1=cr0.x+cr0.w/2, y1=cr0.y+cr0.h/2, x2=cr2.x+cr2.w/2, y2=cr2.y+cr2.h/2;
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=4; ctx.lineCap='round';
+    glow(col,28); ctx.globalAlpha=0.9;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+(x2-x1)*lp, y1+(y2-y1)*lp); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawRipples() {
+  for (let i = G.ripples.length-1; i >= 0; i--) {
+    const rp = G.ripples[i]; rp.r += 5; rp.life -= 0.05;
+    if (rp.life <= 0) { G.ripples.splice(i,1); continue; }
+    ctx.save(); ctx.strokeStyle=rp.color; ctx.lineWidth=1.5; ctx.globalAlpha=rp.life*0.45; glow(rp.color,8);
+    ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+  }
+}
+
+function drawParticles() {
+  for (let i = G.particles.length-1; i >= 0; i--) {
+    const p = G.particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.vx*=0.98; p.life-=p.decay;
+    if (p.life<=0) { G.particles.splice(i,1); continue; }
+    ctx.save(); ctx.globalAlpha=p.life; ctx.fillStyle=p.col; glow(p.col,5);
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r*p.life, 0, Math.PI*2); ctx.fill(); ctx.restore();
+  }
+}
+
+function drawGlitch() {
+  if (!G || G.glitch <= 0) return;
+  for (let i = 0; i < Math.floor(6+Math.random()*8); i++) {
+    const sy=Math.random()*canvas.height, sh=2+Math.random()*12, dx=(Math.random()-0.5)*18*G.glitch;
+    try { const img=ctx.getImageData(0,sy,canvas.width,sh); ctx.putImageData(img,dx,sy); } catch(e){}
+  }
+  ctx.save(); ctx.globalCompositeOperation='screen'; ctx.globalAlpha=0.06*G.glitch;
+  ctx.fillStyle = G.winner==='X' ? C.X : C.O;
+  ctx.fillRect((Math.random()-0.5)*6, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function drawHUD() {
+  const l = L(), t = G.t;
+
+  // ≡ MENU button
+  const mb = menuBtn(), mhov = G.menuHover;
+  ctx.save(); ctx.font='10px "Courier New", monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillStyle = mhov ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.28)';
+  if (mhov) glow('#fff', 8);
+  ctx.fillText('≡ MENU', mb.x+4, mb.y+mb.h/2); noGlow(); ctx.restore();
+
+  // Title
+  ctx.save(); ctx.font='bold 22px "Courier New", monospace';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#fff'; glow('#fff',10);
+  ctx.fillText('CONQUEST', l.W/2, l.oy-44); noGlow(); ctx.restore();
+
+  if (!G.over) {
+    const isCPU = M.mode === 'cpu' && G.player === 'O';
+    const pc    = G.player === 'X' ? C.X : C.O;
+    const pulse = 0.7 + 0.3*Math.sin(t*5);
+
+    ctx.save(); ctx.font='bold 12px "Courier New", monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=pc; glow(pc, 14*pulse); ctx.globalAlpha=pulse;
+    if (isCPU && G.cpuThinking) {
+      const dots = '.'.repeat(1 + Math.floor(t*3)%3);
+      ctx.fillText(`CPU THINKING${dots}`, l.W/2, l.oy-22);
+    } else if (isCPU) {
+      ctx.fillText(`CPU'S TURN`, l.W/2, l.oy-22);
+    } else if (M.mode === 'cpu') {
+      ctx.fillText('YOUR TURN  [YOU: X]', l.W/2, l.oy-22);
+    } else {
+      ctx.fillText(`▶  PLAYER ${G.player}  ◀`, l.W/2, l.oy-22);
+    }
+    ctx.restore();
+
+    ctx.save(); ctx.font='10px "Courier New", monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    if (G.active !== null) {
+      ctx.fillStyle='rgba(255,210,0,0.75)'; ctx.fillText('MUST PLAY IN HIGHLIGHTED BOARD', l.W/2, l.oy-7);
+    } else {
+      ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.fillText('PLAY IN ANY OPEN BOARD', l.W/2, l.oy-7);
+    }
+    ctx.restore();
+
+    ctx.save(); ctx.font='10px "Courier New", monospace'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(255,255,255,0.17)';
+    const tag = M.mode==='cpu' ? `VS CPU · ${M.diff.toUpperCase()}` : '2 PLAYER';
+    ctx.fillText(`WIN ANY BOARD = WIN THE GAME  ·  ${tag}`, l.W/2, l.H-16);
+    ctx.restore();
+
+  } else {
+    const wCol  = G.winner==='X' ? C.X : G.winner==='O' ? C.O : '#aaaacc';
+    const ap    = Math.min(G.winAnim*3, 1);
+    const sc    = 1 + 0.07*Math.sin(t*4);
+    let label;
+    if (G.winner==='DRAW')           label = 'STALEMATE';
+    else if (M.mode==='cpu')          label = G.winner==='X' ? 'YOU WIN!' : 'CPU WINS!';
+    else                              label = `PLAYER ${G.winner} WINS`;
+
+    ctx.save(); ctx.globalAlpha=ap;
+    ctx.font=`bold ${Math.round(36*sc)}px "Courier New", monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=wCol; glow(wCol, 35+18*Math.sin(t*4));
+    ctx.fillText(label, l.W/2, l.oy-30); ctx.restore();
+
+    ctx.save(); ctx.globalAlpha=Math.min(Math.max(G.winAnim-0.4,0)*2.5, 1);
+    ctx.font='11px "Courier New", monospace'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.fillText('CLICK TO PLAY AGAIN  ·  ESC FOR MENU', l.W/2, l.oy-9);
+    ctx.restore();
+
+    if (G.winner!=='DRAW' && Math.random()<0.5) {
+      const col = G.winner==='X' ? C.X : C.O;
+      G.particles.push({ x: Math.random()*l.W, y: -6, vx:(Math.random()-0.5)*2.5, vy:2+Math.random()*4.5, life:1, decay:0.006+Math.random()*0.01, r:1.5+Math.random()*3, col: Math.random()<0.35?'#fff':col });
+    }
+  }
+}
+
+// ── INPUT ─────────────────────────────────────────────────────────────────────
+function canvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width/rect.width, sy = canvas.height/rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return [(src.clientX - rect.left)*sx, (src.clientY - rect.top)*sy];
+}
+
+function hitMenuCard(cards, mx, my) {
+  for (const c of cards)
+    if (mx>=c.x && mx<=c.x+c.w && my>=c.y && my<=c.y+c.h) return c;
+  return null;
+}
+
+canvas.addEventListener('mousemove', e => {
+  const [mx,my] = canvasXY(e);
+  if (M.screen === 'select') {
+    const hit = hitMenuCard(selectCards(), mx, my);
+    M.hover = hit ? hit.id : null;
+    canvas.style.cursor = hit ? 'pointer' : 'crosshair';
+    return;
+  }
+  if (M.screen === 'difficulty') {
+    const bb = backBtn();
+    const dHit = hitMenuCard(diffCards(), mx, my);
+    const bHit = mx>=bb.x && mx<=bb.x+bb.w && my>=bb.y && my<=bb.y+bb.h;
+    M.hover = dHit ? dHit.id : (bHit ? 'back' : null);
+    canvas.style.cursor = (dHit||bHit) ? 'pointer' : 'crosshair';
+    return;
+  }
+  if (M.screen === 'playing' && G) {
+    if (G.over) { G.hover=null; G.menuHover=false; canvas.style.cursor='pointer'; return; }
+    const mb = menuBtn();
+    G.menuHover = mx>=mb.x && mx<=mb.x+mb.w && my>=mb.y && my<=mb.y+mb.h;
+    const isCPUTurn = M.mode==='cpu' && G.player==='O';
+    if (isCPUTurn) { G.hover=null; canvas.style.cursor=G.menuHover?'pointer':'default'; return; }
+    G.hover = hitTest(mx, my);
+    canvas.style.cursor = (G.hover||G.menuHover) ? 'pointer' : 'crosshair';
+  }
+});
+canvas.addEventListener('mouseleave', () => { M.hover=null; if (G) { G.hover=null; G.menuHover=false; } });
+
+function handleClick(mx, my) {
+  getAC();
+  if (M.screen === 'select') {
+    const hit = hitMenuCard(selectCards(), mx, my);
+    if (!hit) return;
+    if (hit.id === '2p') { M.mode='2p'; M.screen='playing'; G=newGame(); }
+    else                 { M.screen='difficulty'; }
+    return;
+  }
+  if (M.screen === 'difficulty') {
+    const bb = backBtn();
+    if (mx>=bb.x && mx<=bb.x+bb.w && my>=bb.y && my<=bb.y+bb.h) { M.screen='select'; return; }
+    const hit = hitMenuCard(diffCards(), mx, my);
+    if (!hit) return;
+    M.mode='cpu'; M.diff=hit.id; M.screen='playing'; G=newGame();
+    return;
+  }
+  if (M.screen === 'playing' && G) {
+    const mb = menuBtn();
+    if (mx>=mb.x && mx<=mb.x+mb.w && my>=mb.y && my<=mb.y+mb.h) {
+      if (G.cpuTimer) clearTimeout(G.cpuTimer);
+      M.screen='select'; G=null; return;
+    }
+    if (G.over) { G=newGame(); return; }
+    const isCPUTurn = M.mode==='cpu' && G.player==='O';
+    if (isCPUTurn) return;
+    const hit = hitTest(mx, my);
+    if (hit) play(hit.b, hit.c);
+  }
+}
+
+canvas.addEventListener('click',      e => handleClick(...canvasXY(e)));
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleClick(...canvasXY(e)); }, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (M.screen === 'playing' && G) { if (G.cpuTimer) clearTimeout(G.cpuTimer); M.screen='select'; G=null; }
+  else if (M.screen === 'difficulty') M.screen='select';
+});
+
+// ── MAIN LOOP ─────────────────────────────────────────────────────────────────
+let prevNow = 0;
+
+function frame(now) {
+  const dt = Math.min((now - prevNow)/1000, 0.05);
+  prevNow = now;
+
+  if (M.screen === 'select')     { drawSelectScreen(); }
+  else if (M.screen === 'difficulty') { drawDifficultyScreen(); }
+  else if (M.screen === 'playing' && G) {
+    G.t += dt;
+    for (const k in G.cellAnims)  G.cellAnims[k].v  = Math.min(G.cellAnims[k].v  + dt*5.5, 1);
+    for (const k in G.boardAnims) G.boardAnims[k].v = Math.min(G.boardAnims[k].v + dt*2.2, 1);
+    if (G.over)   G.winAnim = Math.min(G.winAnim + dt*0.85, 1);
+    if (G.glitch) G.glitch  = Math.max(G.glitch  - dt*1.8,  0);
+    G.shake.x *= 0.78; G.shake.y *= 0.78;
+
+    ctx.save();
+    if (Math.abs(G.shake.x)>0.3 || Math.abs(G.shake.y)>0.3) ctx.translate(G.shake.x, G.shake.y);
+    drawGameBg();
+    for (let b = 0; b < 9; b++) drawBoard(b);
+    drawRipples();
+    drawParticles();
+    drawHUD();
+    ctx.restore();
+    drawCRT();
+    if (G.glitch > 0.05) drawGlitch();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

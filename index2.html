@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coco Frio — a videogame collection</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0b0907;
+      --bg2:      #100d0a;
+      --label-bg: #100e0b;
+      --text:     #c8bfb4;
+      --warm:     #ede0cc;
+      --dim:      #52443a;
+      --accent:   #e8922a;
+      --border:   rgba(255,255,255,0.05);
+      --mono:     'JetBrains Mono', monospace;
+      --sleeve-w: 540px;
+      --sleeve-art-h: 190px;
+      --sleeve-label-h: 76px;
+      --sleeve-h: 266px; /* art + label */
+      --gap:      22px;
+      --step:     288px; /* sleeve-h + gap */
+    }
+
+    html, body {
+      height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .shell { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── NAV ── */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem; height: 52px; flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-back {
+      font-family: var(--mono); font-size: 0.72rem; color: var(--dim);
+      text-decoration: none; letter-spacing: 0.04em; transition: color 0.2s;
+    }
+    .nav-back:hover { color: var(--accent); }
+    .nav-counter {
+      font-family: var(--mono); font-size: 0.62rem; color: var(--dim);
+      letter-spacing: 0.08em;
+    }
+    .nav-label {
+      font-family: var(--mono); font-size: 0.68rem; color: var(--dim);
+      letter-spacing: 0.1em;
+    }
+
+    /* ── WORKSPACE ── */
+    .workspace { display: flex; flex: 1; min-height: 0; }
+
+    /* ── CRATE STAGE (left) ── */
+    .crate-stage {
+      width: 58%; position: relative;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      /* subtle inner vignette on left/right edges */
+      mask-image: linear-gradient(
+        to right,
+        transparent 0%, rgba(0,0,0,0.6) 6%,
+        black 14%, black 86%,
+        rgba(0,0,0,0.6) 94%, transparent 100%
+      );
+    }
+
+    /* fade top and bottom so peeking sleeves dissolve */
+    .crate-stage::before,
+    .crate-stage::after {
+      content: ''; position: absolute; left: 0; right: 0;
+      z-index: 2; pointer-events: none;
+    }
+    .crate-stage::before {
+      top: 0; height: 26%;
+      background: linear-gradient(to bottom, var(--bg) 15%, transparent 100%);
+    }
+    .crate-stage::after {
+      bottom: 0; height: 26%;
+      background: linear-gradient(to top, var(--bg) 15%, transparent 100%);
+    }
+
+    .crate {
+      display: flex; flex-direction: column;
+      align-items: center; gap: var(--gap);
+      will-change: transform;
+      transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* ── SLEEVE ── */
+    .sleeve {
+      width: var(--sleeve-w);
+      height: var(--sleeve-h);
+      flex-shrink: 0;
+      border-radius: 2px; overflow: hidden;
+      cursor: pointer;
+      transition: opacity 0.38s, transform 0.38s, box-shadow 0.38s;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.65);
+    }
+
+    .sleeve.active {
+      box-shadow:
+        0 16px 56px rgba(0,0,0,0.85),
+        0 0 0 1px rgba(232,146,42,0.3),
+        0 0 48px rgba(232,146,42,0.05);
+    }
+
+    .sleeve:not(.active) {
+      opacity: 0.28;
+      transform: scaleX(0.93) scaleY(0.97);
+    }
+
+    /* art */
+    .sleeve-art-wrap {
+      position: relative;
+      height: var(--sleeve-art-h);
+      overflow: hidden;
+    }
+
+    .sleeve-art {
+      width: 100%; height: 100%;
+      object-fit: cover; object-position: center;
+      display: block;
+    }
+
+    .sleeve-placeholder {
+      width: 100%; height: 100%;
+      background: #1a1510;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 0.58rem;
+      color: var(--dim); letter-spacing: 0.12em;
+    }
+
+    /* scanline grain on the art */
+    .sleeve-art-wrap::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 2px,
+        rgba(0,0,0,0.14) 2px, rgba(0,0,0,0.14) 3px
+      );
+      pointer-events: none;
+    }
+
+    /* label strip */
+    .sleeve-label {
+      height: var(--sleeve-label-h);
+      background: var(--label-bg);
+      padding: 11px 18px 12px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      display: flex; flex-direction: column; justify-content: center;
+      gap: 4px;
+    }
+
+    .sleeve-badge {
+      font-family: var(--mono); font-size: 0.5rem;
+      color: var(--accent); letter-spacing: 0.12em;
+    }
+
+    .sleeve-name {
+      font-family: var(--mono); font-size: 1.05rem;
+      color: var(--warm); letter-spacing: 0.01em; font-weight: 400;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .sleeve-catalog {
+      font-family: var(--mono); font-size: 0.44rem;
+      color: var(--dim); letter-spacing: 0.1em;
+    }
+
+    /* hints inside stage */
+    .stage-hints {
+      position: absolute; bottom: 1.2rem; left: 0; right: 0;
+      display: flex; justify-content: center;
+      z-index: 3; pointer-events: none;
+    }
+    .hint-line {
+      font-family: var(--mono); font-size: 0.54rem;
+      color: var(--dim); letter-spacing: 0.08em;
+    }
+    .hint-key {
+      display: inline-block;
+      border: 1px solid rgba(82,68,58,0.6);
+      border-radius: 2px; padding: 0 0.3rem;
+      line-height: 1.7; margin-right: 0.15rem;
+    }
+
+    /* ── INFO PANEL (right) ── */
+    .info-panel {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      justify-content: center;
+      padding: 3rem 2.5rem 3rem 2.8rem;
+      border-left: 1px solid var(--border);
+    }
+
+    .info-eyebrow {
+      font-family: var(--mono); font-size: 0.58rem;
+      color: var(--accent); letter-spacing: 0.14em;
+      margin-bottom: 0.55rem;
+    }
+
+    .info-name {
+      font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+      font-weight: 300; letter-spacing: -0.02em;
+      color: var(--warm); line-height: 1.2;
+      margin-bottom: 1.1rem;
+    }
+
+    .info-desc {
+      font-size: 0.87rem; line-height: 1.78;
+      color: var(--text); max-width: 42ch;
+      margin-bottom: 1.6rem;
+    }
+
+    .info-tags {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+      margin-bottom: 2.4rem;
+    }
+
+    .info-tag {
+      font-family: var(--mono); font-size: 0.54rem;
+      letter-spacing: 0.06em; color: var(--dim);
+      border: 1px solid rgba(82,68,58,0.5);
+      padding: 0.18rem 0.6rem; border-radius: 2px;
+    }
+
+    .btn-play {
+      font-family: var(--mono); font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      color: var(--bg); background: var(--accent);
+      border: none; border-radius: 2px;
+      padding: 0.65rem 2rem; cursor: pointer;
+      text-decoration: none; display: inline-block;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+    .btn-play:hover { opacity: 0.82; }
+
+    .info-empty {
+      font-family: var(--mono); font-size: 0.68rem;
+      color: var(--dim); letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+  <nav>
+    <a class="nav-back" href="/">← konukoii.com</a>
+    <span class="nav-counter" id="nav-counter"></span>
+    <span class="nav-label">// COCO FRIO</span>
+  </nav>
+
+  <div class="workspace">
+
+    <div class="crate-stage" id="crate-stage">
+      <div class="crate" id="crate"></div>
+      <div class="stage-hints">
+        <div class="hint-line">
+          <span class="hint-key">W</span><span class="hint-key">S</span> browse
+          &nbsp;·&nbsp;
+          <span class="hint-key">↵</span> play
+        </div>
+      </div>
+    </div>
+
+    <aside class="info-panel" id="info-panel">
+      <div class="info-empty">— SELECT A GAME —</div>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+  const crateEl   = document.getElementById('crate');
+  const stageEl   = document.getElementById('crate-stage');
+  const infoEl    = document.getElementById('info-panel');
+  const counterEl = document.getElementById('nav-counter');
+
+  // must match CSS --step (sleeve-h + gap)
+  const SLEEVE_H = 266;
+  const GAP      = 22;
+  const STEP     = SLEEVE_H + GAP;
+
+  let games  = [];
+  let cursor = 0;
+
+  function buildCrate() {
+    crateEl.innerHTML = '';
+    games.forEach((g, i) => {
+      const sleeve = document.createElement('div');
+      sleeve.className = 'sleeve';
+      sleeve.dataset.idx = i;
+
+      const artWrap = document.createElement('div');
+      artWrap.className = 'sleeve-art-wrap';
+
+      const img = document.createElement('img');
+      img.className = 'sleeve-art';
+      img.alt = g.name;
+      img.src = `${g.id}/${g.id}.png`;
+      img.onerror = () => {
+        const ph = document.createElement('div');
+        ph.className = 'sleeve-placeholder';
+        ph.textContent = '— NO ART —';
+        img.replaceWith(ph);
+      };
+      artWrap.appendChild(img);
+
+      const label = document.createElement('div');
+      label.className = 'sleeve-label';
+      label.innerHTML = `
+        <div class="sleeve-badge">${g.badge}</div>
+        <div class="sleeve-name">${g.name}</div>
+        <div class="sleeve-catalog">CF-${String(i + 1).padStart(3, '0')} &nbsp;·&nbsp; COCO FRIO GAMES</div>
+      `;
+
+      sleeve.appendChild(artWrap);
+      sleeve.appendChild(label);
+
+      sleeve.addEventListener('click', () => {
+        if (cursor === i) {
+          window.location.href = `${g.id}/`;
+        } else {
+          cursor = i;
+          update();
+        }
+      });
+
+      crateEl.appendChild(sleeve);
+    });
+  }
+
+  function update() {
+    const stageH = stageEl.clientHeight;
+    const offset = stageH / 2 - cursor * STEP - SLEEVE_H / 2;
+    crateEl.style.transform = `translateY(${offset}px)`;
+
+    document.querySelectorAll('.sleeve').forEach((el, i) => {
+      el.classList.toggle('active', i === cursor);
+    });
+
+    const g = games[cursor];
+    if (!g) return;
+
+    counterEl.textContent = `${String(cursor + 1).padStart(2, '0')} / ${String(games.length).padStart(2, '0')}`;
+
+    infoEl.innerHTML = `
+      <div class="info-eyebrow">${g.badge}</div>
+      <div class="info-name">${g.name}</div>
+      <p class="info-desc">${g.desc}</p>
+      <div class="info-tags">${g.tags.map(t => `<span class="info-tag">${t}</span>`).join('')}</div>
+      <a class="btn-play" href="${g.id}/">PLAY →</a>
+    `;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (cursor > 0) { cursor--; update(); }
+    } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (cursor < games.length - 1) { cursor++; update(); }
+    } else if (e.key === 'Enter') {
+      if (games[cursor]) window.location.href = `${games[cursor].id}/`;
+    }
+  });
+
+  fetch('games.json')
+    .then(r => r.json())
+    .then(data => {
+      games = data;
+      buildCrate();
+      update();
+    });
+</script>
+</body>
+</html>
